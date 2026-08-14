@@ -27,10 +27,16 @@ import {
 
 import type { MonthCalculationResult } from "@/lib/finance/balances";
 
+/* -------------------------------------------------------------------------- */
+/* Formatting                                                                 */
+/* -------------------------------------------------------------------------- */
+
 function money(value: number) {
   return new Intl.NumberFormat("en-CA", {
     style: "currency",
     currency: "CAD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
@@ -53,6 +59,42 @@ function monthLabel(month: string) {
   }).format(new Date(`${month}-01T12:00:00`));
 }
 
+/**
+ * Converts user-entered currency text into a number.
+ *
+ * Supports:
+ * 3900
+ * 3900.5
+ * 3900.50
+ * $3900.50
+ * 3,900.50
+ */
+function parseAmount(value: string) {
+  const cleaned = value.replace(/[$,\s]/g, "");
+  const parsed = Number(cleaned);
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Formats a typed amount to two decimals.
+ */
+function formatInputAmount(value: string) {
+  if (!value.trim()) return "";
+
+  const number = parseAmount(value);
+
+  if (!Number.isFinite(number)) {
+    return value;
+  }
+
+  return number.toFixed(2);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Main Component                                                             */
+/* -------------------------------------------------------------------------- */
+
 export function CashFlowClient({
   month,
   calculation,
@@ -66,6 +108,7 @@ export function CashFlowClient({
 
   const [pending, startTransition] = useTransition();
   const [privacy, setPrivacy] = useState(false);
+
   const [showSetup, setShowSetup] = useState(!hasAccount);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -76,6 +119,10 @@ export function CashFlowClient({
   const [showBalanceEditor, setShowBalanceEditor] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /* ------------------------------------------------------------------------ */
+  /* Month Navigation                                                         */
+  /* ------------------------------------------------------------------------ */
+
   const goMonth = (delta: number) => {
     const date = new Date(`${month}-01T12:00:00`);
 
@@ -85,6 +132,10 @@ export function CashFlowClient({
 
     router.push(`/cash-flow?month=${next}`);
   };
+
+  /* ------------------------------------------------------------------------ */
+  /* Server Action Runner                                                     */
+  /* ------------------------------------------------------------------------ */
 
   const run = (fn: () => Promise<unknown>) => {
     setError(null);
@@ -99,12 +150,19 @@ export function CashFlowClient({
     });
   };
 
+  /* ------------------------------------------------------------------------ */
+  /* Derived State                                                            */
+  /* ------------------------------------------------------------------------ */
+
   const summary = calculation?.summary;
   const isOverride = calculation?.startingBalanceSource === "override";
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-5 pb-28 sm:px-6 sm:py-8">
-      {/* Header */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Header                                                             */}
+      {/* ------------------------------------------------------------------ */}
+
       <header className="mb-5 flex flex-col gap-4 sm:mb-7 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="mb-2 flex items-center gap-2">
@@ -148,19 +206,24 @@ export function CashFlowClient({
           onClick={() => setPrivacy((value) => !value)}
         >
           <LockKeyhole size={16} className="mr-2" />
-
           {privacy ? "Privacy On" : "Privacy Mode"}
         </Button>
       </header>
 
-      {/* Error */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Error                                                              */}
+      {/* ------------------------------------------------------------------ */}
+
       {error && (
         <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
           {error}
         </div>
       )}
 
-      {/* Setup */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Initial Setup                                                       */}
+      {/* ------------------------------------------------------------------ */}
+
       {!hasAccount || showSetup ? (
         <SetupCard
           initialDate={`${month}-01`}
@@ -175,14 +238,17 @@ export function CashFlowClient({
             )
           }
         />
-      ) : calculation?.summary ? (
+      ) : calculation && summary ? (
         <>
-          {/* Summary */}
+          {/* -------------------------------------------------------------- */}
+          {/* Summary                                                         */}
+          {/* -------------------------------------------------------------- */}
+
           <Card className="mb-5 overflow-hidden">
             <div className="grid gap-px bg-[var(--border)] sm:grid-cols-4">
               <Metric
                 label="Starting Balance"
-                value={calculation.startingBalance!}
+                value={calculation.startingBalance ?? 0}
                 privacy={privacy}
               />
 
@@ -220,7 +286,9 @@ export function CashFlowClient({
                 <Button
                   variant="outline"
                   disabled={pending}
-                  onClick={() => run(() => reconnectStartingBalance(month))}
+                  onClick={() =>
+                    run(() => reconnectStartingBalance(`${month}-01`))
+                  }
                 >
                   <Link2 size={15} className="mr-2" />
                   Reconnect
@@ -229,7 +297,10 @@ export function CashFlowClient({
             )}
           </Card>
 
-          {/* Transactions Header */}
+          {/* -------------------------------------------------------------- */}
+          {/* Transactions Header                                             */}
+          {/* -------------------------------------------------------------- */}
+
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium">Transactions</p>
@@ -237,6 +308,12 @@ export function CashFlowClient({
               {calculation.startingBalanceSource === "previous_month" && (
                 <p className="text-xs text-[var(--muted-foreground)]">
                   Starting balance comes from the previous month.
+                </p>
+              )}
+
+              {calculation.startingBalanceSource === "initial" && (
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  This is your original starting balance.
                 </p>
               )}
             </div>
@@ -257,7 +334,10 @@ export function CashFlowClient({
             </div>
           </div>
 
-          {/* Transactions Table */}
+          {/* -------------------------------------------------------------- */}
+          {/* Transactions Table                                              */}
+          {/* -------------------------------------------------------------- */}
+
           <Card className="overflow-hidden">
             <div className="hidden grid-cols-[120px_1fr_130px_100px_88px] gap-3 border-b border-[var(--border)] px-4 py-3 text-xs font-medium text-[var(--muted-foreground)] sm:grid">
               <span>Balance</span>
@@ -269,7 +349,7 @@ export function CashFlowClient({
 
             <div className="divide-y divide-[var(--border)]">
               <StartingRow
-                value={calculation.startingBalance!}
+                value={calculation.startingBalance ?? 0}
                 privacy={privacy}
                 date={calculation.monthStart}
               />
@@ -305,7 +385,10 @@ export function CashFlowClient({
         </Card>
       )}
 
-      {/* Add Transaction */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Add Transaction                                                     */}
+      {/* ------------------------------------------------------------------ */}
+
       {showAdd && (
         <TransactionDialog
           month={month}
@@ -317,7 +400,10 @@ export function CashFlowClient({
         />
       )}
 
-      {/* Edit Transaction */}
+      {/* ------------------------------------------------------------------ */}
+      {/* Edit Transaction                                                    */}
+      {/* ------------------------------------------------------------------ */}
+
       {editing && (
         <TransactionDialog
           month={month}
@@ -330,17 +416,21 @@ export function CashFlowClient({
         />
       )}
 
-      {/* Starting Balance */}
-      {showBalanceEditor && calculation?.summary && (
+      {/* ------------------------------------------------------------------ */}
+      {/* Starting Balance                                                    */}
+      {/* ------------------------------------------------------------------ */}
+
+      {showBalanceEditor && calculation && summary && (
         <BalanceDialog
           month={month}
-          current={calculation.startingBalance!}
+          current={calculation.startingBalance ?? 0}
           pending={pending}
+          isInitialBalance={calculation.startingBalanceSource === "initial"}
           onClose={() => setShowBalanceEditor(false)}
           onSubmit={(value) =>
             run(() =>
               updateStartingBalance({
-                monthStart: month,
+                monthStart: `${month}-01`,
                 startingBalance: value,
               }).then(() => setShowBalanceEditor(false)),
             )
@@ -352,7 +442,7 @@ export function CashFlowClient({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Metric                                                                    */
+/* Metric                                                                     */
 /* -------------------------------------------------------------------------- */
 
 function Metric({
@@ -368,7 +458,9 @@ function Metric({
 }) {
   return (
     <div className="bg-[var(--card)] p-4 sm:p-5">
-      <p className="text-xs text-[var(--muted-foreground)]">{label}</p>
+      <p className="text-xs font-medium text-[var(--muted-foreground)]">
+        {label}
+      </p>
 
       <p
         className={`mt-1 text-xl ${
@@ -382,7 +474,7 @@ function Metric({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Starting Row                                                              */
+/* Starting Row                                                               */
 /* -------------------------------------------------------------------------- */
 
 function StartingRow({
@@ -416,7 +508,7 @@ function StartingRow({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Transaction Row                                                           */
+/* Transaction Row                                                            */
 /* -------------------------------------------------------------------------- */
 
 function TransactionRow({
@@ -464,6 +556,7 @@ function TransactionRow({
 
       <div className="flex items-center gap-1">
         <button
+          type="button"
           disabled={pending}
           onClick={onEdit}
           className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
@@ -473,6 +566,7 @@ function TransactionRow({
         </button>
 
         <button
+          type="button"
           disabled={pending}
           onClick={onDelete}
           className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
@@ -486,7 +580,7 @@ function TransactionRow({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Setup Card                                                                */
+/* Setup Card                                                                 */
 /* -------------------------------------------------------------------------- */
 
 function SetupCard({
@@ -501,11 +595,35 @@ function SetupCard({
   onCancel?: () => void;
 }) {
   const [date, setDate] = useState(initialDate);
-  const [balance, setBalance] = useState(0);
+  const [balance, setBalance] = useState("");
+
+  const handleBalanceChange = (value: string) => {
+    if (/^\d*\.?\d{0,2}$/.test(value)) {
+      setBalance(value);
+    }
+  };
+
+  const handleBalanceFocus = () => {
+    /*
+     * Treat 0.00 as a placeholder if it ever exists in this field.
+     * This lets the user immediately type a new amount.
+     */
+    if (balance === "0.00") {
+      setBalance("");
+    }
+  };
+
+  const handleBlur = () => {
+    if (!balance.trim()) return;
+
+    setBalance(formatInputAmount(balance));
+  };
 
   return (
     <Card className="mb-6 max-w-xl p-5 sm:p-6">
-      <p className="text-sm text-[var(--muted-foreground)]">Get started</p>
+      <p className="text-sm font-medium text-[var(--muted-foreground)]">
+        Get started
+      </p>
 
       <h2 className="mt-1 text-xl font-semibold">
         Set your first starting balance
@@ -527,16 +645,31 @@ function SetupCard({
           />
         </label>
 
-        <label className="text-sm font-medium">
-          Starting balance
-          <input
-            className="mt-2 h-11 w-full rounded-xl border border-[var(--border)] bg-transparent px-3"
-            type="number"
-            step="0.01"
-            value={balance}
-            onChange={(e) => setBalance(Number(e.target.value))}
-          />
-        </label>
+        <div>
+          <label className="text-sm font-medium">Starting balance</label>
+
+          <div className="mt-2 flex h-11 items-center rounded-xl border border-[var(--border)] bg-transparent px-3 focus-within:ring-2 focus-within:ring-[var(--ring)]">
+            <span className="mr-2 text-sm font-medium text-[var(--muted-foreground)]">
+              $
+            </span>
+
+            <input
+              className="h-full min-w-0 flex-1 bg-transparent outline-none"
+              type="text"
+              inputMode="decimal"
+              value={balance}
+              placeholder="0.00"
+              onFocus={handleBalanceFocus}
+              onChange={(e) => handleBalanceChange(e.target.value)}
+              onBlur={handleBlur}
+              aria-label="Starting balance in Canadian dollars"
+            />
+
+            <span className="ml-2 text-xs font-medium text-[var(--muted-foreground)]">
+              CAD
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="mt-5 flex gap-2">
@@ -546,7 +679,10 @@ function SetupCard({
           </Button>
         )}
 
-        <Button disabled={pending} onClick={() => onSubmit(date, balance)}>
+        <Button
+          disabled={pending}
+          onClick={() => onSubmit(date, parseAmount(balance))}
+        >
           Save starting balance
         </Button>
       </div>
@@ -555,7 +691,7 @@ function SetupCard({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Transaction Dialog                                                        */
+/* Transaction Dialog                                                         */
 /* -------------------------------------------------------------------------- */
 
 function TransactionDialog({
@@ -574,7 +710,7 @@ function TransactionDialog({
   const [name, setName] = useState(transaction?.name ?? "");
 
   const [amount, setAmount] = useState(
-    transaction ? Math.abs(transaction.amount) : 0,
+    transaction ? Math.abs(transaction.amount).toFixed(2) : "",
   );
 
   const [date, setDate] = useState(
@@ -585,12 +721,36 @@ function TransactionDialog({
     transaction && transaction.amount > 0 ? "income" : "expense",
   );
 
+  const handleAmountChange = (value: string) => {
+    if (/^\d*\.?\d{0,2}$/.test(value)) {
+      setAmount(value);
+    }
+  };
+
+  const handleAmountFocus = () => {
+    /*
+     * If the field contains the formatted zero value, clear it so
+     * the user can start typing immediately.
+     */
+    if (amount === "0.00") {
+      setAmount("");
+    }
+  };
+
+  const handleAmountBlur = () => {
+    if (!amount.trim()) return;
+
+    setAmount(formatInputAmount(amount));
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <div className="w-full max-w-md rounded-t-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-2xl sm:rounded-3xl">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-[var(--muted-foreground)]">Cash Flow</p>
+            <p className="text-sm font-medium text-[var(--muted-foreground)]">
+              Cash Flow
+            </p>
 
             <h2 className="text-xl font-semibold">
               {transaction ? "Edit transaction" : "Add transaction"}
@@ -603,6 +763,8 @@ function TransactionDialog({
         </div>
 
         <div className="mt-5 space-y-4">
+          {/* Type */}
+
           <label className="block text-sm font-medium">
             Type
             <select
@@ -611,10 +773,11 @@ function TransactionDialog({
               onChange={(e) => setType(e.target.value as "income" | "expense")}
             >
               <option value="expense">Expense</option>
-
               <option value="income">Income</option>
             </select>
           </label>
+
+          {/* Name */}
 
           <label className="block text-sm font-medium">
             Name
@@ -626,22 +789,41 @@ function TransactionDialog({
             />
           </label>
 
-          <label className="block text-sm font-medium">
-            Amount
-            <input
-              className="mt-2 h-11 w-full rounded-xl border border-[var(--border)] bg-transparent px-3"
-              type="number"
-              min="0.01"
-              step="0.01"
-              value={amount}
-              onChange={(e) => setAmount(Number(e.target.value))}
-            />
+          {/* Amount */}
+
+          <div>
+            <label className="block text-sm font-medium">Amount</label>
+
+            <div className="mt-2 flex h-11 items-center rounded-xl border border-[var(--border)] bg-transparent px-3 focus-within:ring-2 focus-within:ring-[var(--ring)]">
+              <span className="mr-2 text-sm font-medium text-[var(--muted-foreground)]">
+                $
+              </span>
+
+              <input
+                className="h-full min-w-0 flex-1 bg-transparent outline-none"
+                type="text"
+                inputMode="decimal"
+                value={amount}
+                placeholder="0.00"
+                onFocus={handleAmountFocus}
+                onChange={(e) => handleAmountChange(e.target.value)}
+                onBlur={handleAmountBlur}
+                aria-label="Transaction amount in Canadian dollars"
+              />
+
+              <span className="ml-2 text-xs font-medium text-[var(--muted-foreground)]">
+                CAD
+              </span>
+            </div>
+
             <span className="mt-1 block text-xs text-[var(--muted-foreground)]">
               {type === "expense"
                 ? "This will be recorded as a negative cash-flow amount."
                 : "This will be recorded as a positive cash-flow amount."}
             </span>
-          </label>
+          </div>
+
+          {/* Date */}
 
           <label className="block text-sm font-medium">
             Date
@@ -660,21 +842,21 @@ function TransactionDialog({
           </Button>
 
           <Button
-            disabled={pending || !name.trim() || amount <= 0}
+            disabled={pending || !name.trim() || parseAmount(amount) <= 0}
             onClick={() =>
               onSubmit(
                 transaction
                   ? {
                       id: transaction.id,
                       name,
-                      amount,
+                      amount: parseAmount(amount),
                       transactionDate: date,
                       type,
                       recurrence: "once",
                     }
                   : {
                       name,
-                      amount,
+                      amount: parseAmount(amount),
                       transactionDate: date,
                       type,
                       recurrence: "once",
@@ -691,52 +873,138 @@ function TransactionDialog({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Balance Dialog                                                            */
+/* Balance Dialog                                                             */
 /* -------------------------------------------------------------------------- */
 
 function BalanceDialog({
   month,
   current,
   pending,
+  isInitialBalance,
   onClose,
   onSubmit,
 }: {
   month: string;
   current: number;
   pending: boolean;
+  isInitialBalance: boolean;
   onClose: () => void;
   onSubmit: (value: number) => void;
 }) {
-  const [value, setValue] = useState(current);
+  /*
+   * A zero starting balance should behave like a placeholder.
+   *
+   * Existing non-zero balances remain visible.
+   *
+   * If the initial balance is actually $0.00, the input starts empty.
+   */
+  const [value, setValue] = useState(current === 0 ? "" : current.toFixed(2));
+
+  const handleChange = (input: string) => {
+    if (/^\d*\.?\d{0,2}$/.test(input)) {
+      setValue(input);
+    }
+  };
+
+  const handleFocus = () => {
+    /*
+     * This is the important part:
+     *
+     * If the field is showing 0.00, remove it immediately when
+     * the user clicks/taps into the field.
+     *
+     * The user can then type:
+     *
+     * 500
+     * 1250
+     * 3900.50
+     *
+     * without having to delete 0.00 first.
+     */
+    if (value === "0.00") {
+      setValue("");
+    }
+  };
+
+  const handleBlur = () => {
+    /*
+     * Keep an empty field empty.
+     *
+     * We intentionally do NOT turn it back into 0.00.
+     * The placeholder handles the visual zero state.
+     */
+    if (!value.trim()) return;
+
+    setValue(formatInputAmount(value));
+  };
+
+  const handleSubmit = () => {
+    onSubmit(parseAmount(value));
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <div className="w-full max-w-md rounded-t-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-2xl sm:rounded-3xl">
-        <h2 className="text-xl font-semibold">Starting balance</h2>
+        <div>
+          <p className="text-sm font-medium text-[var(--muted-foreground)]">
+            Cash Flow
+          </p>
+
+          <h2 className="mt-1 text-xl font-semibold">
+            {isInitialBalance ? "Set starting balance" : "Starting balance"}
+          </h2>
+        </div>
 
         <p className="mt-2 text-sm text-[var(--muted-foreground)]">
-          Changing this creates an intentional override for {month}. You can
-          reconnect it to the previous month's ending balance afterward.
+          {isInitialBalance
+            ? `Set the starting balance for ${monthLabel(
+                month,
+              )}. Future months will roll forward from this balance.`
+            : `Changing this creates an intentional override for ${monthLabel(
+                month,
+              )}. You can reconnect it to the previous month's ending balance afterward.`}
         </p>
 
-        <label className="mt-5 block text-sm font-medium">
-          Starting balance
-          <input
-            className="mt-2 h-11 w-full rounded-xl border border-[var(--border)] bg-transparent px-3"
-            type="number"
-            step="0.01"
-            value={value}
-            onChange={(e) => setValue(Number(e.target.value))}
-          />
-        </label>
+        <div className="mt-5">
+          <label className="block text-sm font-medium">Starting balance</label>
+
+          <div className="mt-2 flex h-11 items-center rounded-xl border border-[var(--border)] bg-transparent px-3 focus-within:ring-2 focus-within:ring-[var(--ring)]">
+            <span className="mr-2 text-sm font-medium text-[var(--muted-foreground)]">
+              $
+            </span>
+
+            <input
+              className="h-full min-w-0 flex-1 bg-transparent outline-none"
+              type="text"
+              inputMode="decimal"
+              value={value}
+              placeholder="0.00"
+              onFocus={handleFocus}
+              onChange={(e) => handleChange(e.target.value)}
+              onBlur={handleBlur}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleSubmit();
+                }
+              }}
+              aria-label="Starting balance in Canadian dollars"
+              autoFocus
+            />
+
+            <span className="ml-2 text-xs font-medium text-[var(--muted-foreground)]">
+              CAD
+            </span>
+          </div>
+        </div>
 
         <div className="mt-6 flex gap-2">
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
 
-          <Button disabled={pending} onClick={() => onSubmit(value)}>
-            Save override
+          <Button disabled={pending} onClick={handleSubmit}>
+            {isInitialBalance ? "Save starting balance" : "Save override"}
           </Button>
         </div>
       </div>
