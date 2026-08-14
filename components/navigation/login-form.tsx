@@ -1,0 +1,6 @@
+"use client";
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
+export function LoginForm(){const router=useRouter();const supabase=createClient();const [email,setEmail]=useState("");const [password,setPassword]=useState("");const [error,setError]=useState("");const [loading,setLoading]=useState(false);async function submit(e:FormEvent){e.preventDefault();setLoading(true);setError("");const {error}=await supabase.auth.signInWithPassword({email,password});if(error)setError(error.message);else router.push("/cash-flow");setLoading(false);}return <form onSubmit={submit} className="space-y-4"><input required type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="Email" className="h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4"/><input required type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="Password" className="h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--card)] px-4"/>{error&&<p className="text-sm text-red-600">{error}</p>}<Button className="w-full" disabled={loading}>{loading?"Signing in…":"Sign in"}</Button></form>}
