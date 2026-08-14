@@ -16,7 +16,7 @@
     "@supabase/supabase-js": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",
-    "lucide-react": "latest",
+    "lucide-react": "^1.31.0",
     "next": "latest",
     "next-themes": "latest",
     "react": "latest",
@@ -27,6 +27,7 @@
     "zod": "latest"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
