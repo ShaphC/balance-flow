@@ -17,12 +17,12 @@ export function SettingsForm() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5">
+      <div className="rounded-2xl border border-border bg-card p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="font-medium">Test / Privacy Mode</h2>
 
-            <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            <p className="mt-1 text-sm text-muted-foreground">
               Masks financial values for screen sharing and tester feedback.
               Stored data is never changed.
             </p>
@@ -37,7 +37,7 @@ export function SettingsForm() {
         </div>
 
         {privacy && (
-          <p className="mt-4 rounded-xl bg-black/5 p-3 text-sm dark:bg-white/10">
+          <p className="mt-4 rounded-xl bg-muted p-3 text-sm">
             🔒 Privacy Mode is active.
           </p>
         )}
