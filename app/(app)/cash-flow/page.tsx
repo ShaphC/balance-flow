@@ -1,21 +1,58 @@
 import { createClient } from "@/lib/supabase/server";
 import { calculateMonthChain } from "@/lib/finance/balances";
-import type { BalanceAnchor, BalanceOverride, Transaction } from "@/types/finance";
+import { getCurrentMonthKey } from "@/lib/dates";
+import type {
+  BalanceAnchor,
+  BalanceOverride,
+  Transaction,
+} from "@/types/finance";
 import { CashFlowClient } from "@/components/cash-flow/cash-flow-client";
 
-export default async function CashFlowPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
+export default async function CashFlowPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>;
+}) {
   const params = await searchParams;
-  const month = params.month && /^\d{4}-\d{2}$/.test(params.month) ? params.month : new Date().toISOString().slice(0, 7);
+
+  const month =
+    params.month && /^\d{4}-\d{2}$/.test(params.month)
+      ? params.month
+      : getCurrentMonthKey();
+
   const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const { data: account } = await supabase.from("financial_accounts").select("id").eq("user_id", user.id).maybeSingle();
-  if (!account) return <CashFlowClient month={month} calculation={null} hasAccount={false} />;
+  if (!user) {
+    return null;
+  }
 
-  const { data: anchorRow } = await supabase.from("balance_anchors").select("id,account_id,initial_date,initial_balance,status").eq("account_id", account.id).single();
-  if (!anchorRow) return <CashFlowClient month={month} calculation={null} hasAccount={true} />;
+  const { data: account } = await supabase
+    .from("financial_accounts")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!account) {
+    return (
+      <CashFlowClient month={month} calculation={null} hasAccount={false} />
+    );
+  }
+
+  const { data: anchorRow } = await supabase
+    .from("balance_anchors")
+    .select("id,account_id,initial_date,initial_balance,status")
+    .eq("account_id", account.id)
+    .single();
+
+  if (!anchorRow) {
+    return (
+      <CashFlowClient month={month} calculation={null} hasAccount={true} />
+    );
+  }
 
   const anchor: BalanceAnchor = {
     id: anchorRow.id,
@@ -26,9 +63,12 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
   };
 
   const endDate = lastDayOfMonth(month);
+
   const { data: transactionRows } = await supabase
     .from("transactions")
-    .select("id,account_id,user_id,recurring_rule_id,name,amount,transaction_date,sort_order")
+    .select(
+      "id,account_id,user_id,recurring_rule_id,name,amount,transaction_date,sort_order",
+    )
     .eq("account_id", account.id)
     .gte("transaction_date", anchor.initialDate)
     .lte("transaction_date", endDate)
@@ -60,12 +100,20 @@ export default async function CashFlowPage({ searchParams }: { searchParams: Pro
     startingBalance: Number(row.starting_balance),
   }));
 
-  const calculation = calculateMonthChain(anchor, transactions, overrides, `${month}-01`);
+  const calculation = calculateMonthChain(
+    anchor,
+    transactions,
+    overrides,
+    `${month}-01`,
+  );
+
   return <CashFlowClient month={month} calculation={calculation} hasAccount />;
 }
 
-function lastDayOfMonth(month: string) {
+function lastDayOfMonth(month: string): string {
   const date = new Date(`${month}-01T12:00:00Z`);
+
   date.setUTCMonth(date.getUTCMonth() + 1, 0);
+
   return date.toISOString().slice(0, 10);
 }

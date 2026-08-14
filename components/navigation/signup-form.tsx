@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ export function SignupForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -44,11 +46,9 @@ export function SignupForm() {
 
     if (error) {
       setLoading(false);
-
       setError(
         "We couldn't create your account. Please check your information and try again.",
       );
-
       return;
     }
 
@@ -58,57 +58,42 @@ export function SignupForm() {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-5">
-      <div className="space-y-2">
-        <label
-          htmlFor="signup-email"
-          className="text-sm font-medium text-foreground"
-        >
-          Email
-        </label>
+    <form onSubmit={submit} className="space-y-4">
+      {/* Email */}
+      <input
+        required
+        autoComplete="email"
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+        disabled={loading}
+        className="
+          h-11 w-full rounded-xl border
+          border-input bg-background px-4
+          text-foreground outline-none
+          placeholder:text-muted-foreground
+          transition
+          focus:border-ring focus:ring-2 focus:ring-ring/20
+          disabled:cursor-not-allowed disabled:opacity-60
+        "
+      />
 
+      {/* Password */}
+      <div className="relative">
         <input
-          id="signup-email"
-          required
-          autoComplete="email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          disabled={loading}
-          className="
-            h-11 w-full rounded-xl border
-            border-input bg-background px-4
-            text-foreground outline-none
-            placeholder:text-muted-foreground
-            transition
-            focus:border-ring focus:ring-2 focus:ring-ring/20
-            disabled:cursor-not-allowed disabled:opacity-60
-          "
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label
-          htmlFor="signup-password"
-          className="text-sm font-medium text-foreground"
-        >
-          Password
-        </label>
-
-        <input
-          id="signup-password"
           required
           minLength={8}
           autoComplete="new-password"
-          type="password"
+          type={showPassword ? "text" : "password"}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="At least 8 characters"
+          placeholder="Password (8+ characters)"
           disabled={loading}
           className="
             h-11 w-full rounded-xl border
-            border-input bg-background px-4
+            border-input bg-background
+            pl-4 pr-12
             text-foreground outline-none
             placeholder:text-muted-foreground
             transition
@@ -116,6 +101,33 @@ export function SignupForm() {
             disabled:cursor-not-allowed disabled:opacity-60
           "
         />
+
+        <button
+          type="button"
+          aria-label={showPassword ? "Hide password" : "Show password"}
+          disabled={loading}
+          onPointerDown={() => setShowPassword(true)}
+          onPointerUp={() => setShowPassword(false)}
+          onPointerLeave={() => setShowPassword(false)}
+          onPointerCancel={() => setShowPassword(false)}
+          className="
+            absolute right-3 top-1/2
+            flex size-8 -translate-y-1/2
+            items-center justify-center
+            rounded-lg text-muted-foreground
+            transition-colors
+            hover:bg-muted hover:text-foreground
+            focus:outline-none
+            focus:ring-2 focus:ring-ring/40
+            disabled:pointer-events-none
+          "
+        >
+          {showPassword ? (
+            <EyeOff className="size-4" />
+          ) : (
+            <Eye className="size-4" />
+          )}
+        </button>
       </div>
 
       {error && (
