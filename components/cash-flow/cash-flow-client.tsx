@@ -1127,7 +1127,7 @@ function SetupCard({
   const [balance, setBalance] = useState("");
 
   const handleBalanceChange = (value: string) => {
-    if (/^\d*\.?\d{0,2}$/.test(value)) {
+    if (/^-?\d*\.?\d{0,2}$/.test(value)) {
       setBalance(value);
     }
   };
@@ -1248,7 +1248,7 @@ function TransactionDialog({
   );
 
   const handleAmountChange = (value: string) => {
-    if (/^\d*\.?\d{0,2}$/.test(value)) {
+    if (/^-?\d*\.?\d{0,2}$/.test(value)) {
       setAmount(value);
     }
   };
@@ -1409,7 +1409,7 @@ function BalanceDialog({
   const [value, setValue] = useState(current === 0 ? "" : current.toFixed(2));
 
   const handleChange = (input: string) => {
-    if (/^\d*\.?\d{0,2}$/.test(input)) {
+    if (/^-?\d*\.?\d{0,2}$/.test(input)) {
       setValue(input);
     }
   };
