@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -49,6 +50,12 @@ export function FloatingNav() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const isDark = theme === "dark";
 
   return (
@@ -56,7 +63,7 @@ export function FloatingNav() {
       <div className="mx-auto flex max-w-xl items-center justify-center rounded-2xl border bg-background/95 p-2 shadow-lg backdrop-blur-md">
         {navigation.map((item) => {
           const Icon = item.icon;
-          const active = pathname.startsWith(item.href);
+          const active = item.href !== "#" && pathname.startsWith(item.href);
 
           if (!item.enabled) {
             return (
@@ -99,12 +106,26 @@ export function FloatingNav() {
           type="button"
           onClick={() => setTheme(isDark ? "light" : "dark")}
           className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label={
+            mounted
+              ? isDark
+                ? "Switch to light mode"
+                : "Switch to dark mode"
+              : "Toggle theme"
+          }
         >
-          {isDark ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          {mounted ? (
+            isDark ? (
+              <Sun className="size-5" />
+            ) : (
+              <Moon className="size-5" />
+            )
+          ) : (
+            <span className="size-5" aria-hidden="true" />
+          )}
 
           <span className="hidden text-[10px] font-medium sm:block">
-            {isDark ? "Light" : "Dark"}
+            {mounted ? (isDark ? "Light" : "Dark") : "Theme"}
           </span>
         </button>
       </div>

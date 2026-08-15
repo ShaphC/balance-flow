@@ -11,6 +11,8 @@ import {
   LockKeyhole,
   Link2,
   Unlink2,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -21,6 +23,7 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
+  reorderTransaction,
   reconnectStartingBalance,
   updateStartingBalance,
 } from "@/app/(app)/cash-flow/actions";
@@ -353,18 +356,53 @@ export function CashFlowClient({
                   No transactions yet. Add your first income or expense.
                 </div>
               ) : (
-                calculation.transactions.map((transaction) => (
-                  <TransactionRow
-                    key={transaction.id}
-                    transaction={transaction}
-                    privacy={privacy}
-                    pending={pending}
-                    onDelete={() =>
-                      run(() => deleteTransaction(transaction.id))
-                    }
-                    onEdit={() => setEditing(transaction)}
-                  />
-                ))
+                calculation.transactions.map((transaction, index) => {
+                  const previousTransaction =
+                    calculation.transactions[index - 1];
+
+                  const nextTransaction = calculation.transactions[index + 1];
+
+                  const canMoveUp =
+                    !!previousTransaction &&
+                    previousTransaction.transactionDate ===
+                      transaction.transactionDate;
+
+                  const canMoveDown =
+                    !!nextTransaction &&
+                    nextTransaction.transactionDate ===
+                      transaction.transactionDate;
+
+                  return (
+                    <TransactionRow
+                      key={transaction.id}
+                      transaction={transaction}
+                      privacy={privacy}
+                      pending={pending}
+                      canMoveUp={canMoveUp}
+                      canMoveDown={canMoveDown}
+                      onMoveUp={() =>
+                        run(() =>
+                          reorderTransaction({
+                            transactionId: transaction.id,
+                            direction: "up",
+                          }),
+                        )
+                      }
+                      onMoveDown={() =>
+                        run(() =>
+                          reorderTransaction({
+                            transactionId: transaction.id,
+                            direction: "down",
+                          }),
+                        )
+                      }
+                      onDelete={() =>
+                        run(() => deleteTransaction(transaction.id))
+                      }
+                      onEdit={() => setEditing(transaction)}
+                    />
+                  );
+                })
               )}
             </div>
           </Card>
@@ -509,12 +547,20 @@ function TransactionRow({
   transaction,
   privacy,
   pending,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
   onDelete,
   onEdit,
 }: {
   transaction: MonthCalculationResult["transactions"][number];
   privacy: boolean;
   pending: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   onDelete: () => void;
   onEdit: () => void;
 }) {
@@ -554,22 +600,50 @@ function TransactionRow({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
+          {/* Move Up */}
+          <button
+            type="button"
+            disabled={pending || !canMoveUp}
+            onClick={onMoveUp}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/5"
+            aria-label={`Move ${transaction.name} up`}
+            title="Move up"
+          >
+            <ArrowUp size={16} />
+          </button>
+
+          {/* Move Down */}
+          <button
+            type="button"
+            disabled={pending || !canMoveDown}
+            onClick={onMoveDown}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/5"
+            aria-label={`Move ${transaction.name} down`}
+            title="Move down"
+          >
+            <ArrowDown size={16} />
+          </button>
+
+          {/* Edit */}
           <button
             type="button"
             disabled={pending}
             onClick={onEdit}
             className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
             aria-label={`Edit ${transaction.name}`}
+            title="Edit"
           >
             <Pencil size={16} />
           </button>
 
+          {/* Delete */}
           <button
             type="button"
             disabled={pending}
             onClick={onDelete}
             className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
             aria-label={`Delete ${transaction.name}`}
+            title="Delete"
           >
             <Trash2 size={16} />
           </button>

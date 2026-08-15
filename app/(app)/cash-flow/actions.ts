@@ -21,6 +21,11 @@ const updateBalanceSchema = z.object({
 
 const idSchema = z.string().uuid();
 
+const reorderTransactionSchema = z.object({
+  transactionId: idSchema,
+  direction: z.enum(["up", "down"]),
+});
+
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -198,6 +203,149 @@ export async function updateTransaction(input: unknown) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Reorder Transaction                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Moves a transaction up or down within its transaction date.
+ *
+ * Transactions are ordered by:
+ *
+ *   transaction_date
+ *   sort_order
+ *
+ * Reordering therefore only swaps sort_order values between transactions
+ * that share the same transaction date.
+ */
+export async function reorderTransaction(input: unknown) {
+  const parsed = reorderTransactionSchema.parse(input);
+
+  const { supabase, user } = await getUser();
+
+  /* ---------------------------------------------------------------------- */
+  /* Find transaction                                                        */
+  /* ---------------------------------------------------------------------- */
+
+  const { data: transaction, error: transactionError } = await supabase
+    .from("transactions")
+    .select("id, account_id, transaction_date, sort_order")
+    .eq("id", parsed.transactionId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (transactionError) {
+    throw new Error(transactionError.message);
+  }
+
+  if (!transaction) {
+    throw new Error("Transaction not found.");
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Find same-day transactions                                              */
+  /* ---------------------------------------------------------------------- */
+
+  const { data: sameDayTransactions, error: sameDayError } = await supabase
+    .from("transactions")
+    .select("id, sort_order")
+    .eq("account_id", transaction.account_id)
+    .eq("user_id", user.id)
+    .eq("transaction_date", transaction.transaction_date)
+    .order("sort_order", { ascending: true });
+
+  if (sameDayError) {
+    throw new Error(sameDayError.message);
+  }
+
+  const index = sameDayTransactions.findIndex(
+    (item) => item.id === transaction.id,
+  );
+
+  if (index === -1) {
+    throw new Error("Transaction not found.");
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Determine target                                                        */
+  /* ---------------------------------------------------------------------- */
+
+  const targetIndex =
+    parsed.direction === "up"
+      ? index - 1
+      : index + 1;
+
+  /*
+   * Already at the beginning/end of the same-day list.
+   * Nothing needs to change.
+   */
+  if (
+    targetIndex < 0 ||
+    targetIndex >= sameDayTransactions.length
+  ) {
+    return { ok: true };
+  }
+
+  const current = sameDayTransactions[index];
+  const target = sameDayTransactions[targetIndex];
+
+  /* ---------------------------------------------------------------------- */
+  /* Swap sort orders                                                        */
+  /* ---------------------------------------------------------------------- */
+
+  /*
+   * Use a temporary value first so that the swap remains safe even if a
+   * unique constraint exists around the sort order.
+   *
+   * The temporary value is intentionally far outside the normal 1000-based
+   * ordering range.
+   */
+  const temporarySortOrder =
+    Math.min(current.sort_order, target.sort_order) - 1000000;
+
+  const { error: temporaryError } = await supabase
+    .from("transactions")
+    .update({
+      sort_order: temporarySortOrder,
+    })
+    .eq("id", current.id)
+    .eq("user_id", user.id);
+
+  if (temporaryError) {
+    throw new Error(temporaryError.message);
+  }
+
+  const { error: currentError } = await supabase
+    .from("transactions")
+    .update({
+      sort_order: current.sort_order,
+    })
+    .eq("id", target.id)
+    .eq("user_id", user.id);
+
+  if (currentError) {
+    throw new Error(currentError.message);
+  }
+
+  const { error: targetError } = await supabase
+    .from("transactions")
+    .update({
+      sort_order: target.sort_order,
+    })
+    .eq("id", current.id)
+    .eq("user_id", user.id);
+
+  if (targetError) {
+    throw new Error(targetError.message);
+  }
+
+  revalidatePath("/cash-flow");
+
+  return {
+    ok: true,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Delete Transaction                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -219,80 +367,6 @@ export async function deleteTransaction(id: string) {
   revalidatePath("/cash-flow");
 
   return { ok: true };
-}
-
-/* -------------------------------------------------------------------------- */
-/* Reorder Transactions                                                       */
-/* -------------------------------------------------------------------------- */
-
-const reorderTransactionsSchema = z.object({
-  transactionIds: z.array(idSchema).min(1),
-});
-
-export async function reorderTransactions(input: unknown) {
-  const parsed = reorderTransactionsSchema.parse(input);
-
-  const { supabase, user } = await getUser();
-
-  /* ---------------------------------------------------------------------- */
-  /* Find account                                                           */
-  /* ---------------------------------------------------------------------- */
-
-  const { data: account } = await supabase
-    .from("financial_accounts")
-    .select("id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (!account) {
-    throw new Error("Cash Flow account not found.");
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* Verify transactions belong to this account                             */
-  /* ---------------------------------------------------------------------- */
-
-  const { data: transactions, error: fetchError } = await supabase
-    .from("transactions")
-    .select("id")
-    .eq("account_id", account.id)
-    .eq("user_id", user.id)
-    .in("id", parsed.transactionIds);
-
-  if (fetchError) {
-    throw new Error(fetchError.message);
-  }
-
-  if (!transactions || transactions.length !== parsed.transactionIds.length) {
-    throw new Error("One or more transactions could not be found.");
-  }
-
-  /* ---------------------------------------------------------------------- */
-  /* Save new order                                                         */
-  /* ---------------------------------------------------------------------- */
-
-  for (let index = 0; index < parsed.transactionIds.length; index++) {
-    const transactionId = parsed.transactionIds[index];
-
-    const { error } = await supabase
-      .from("transactions")
-      .update({
-        sort_order: (index + 1) * 1000,
-      })
-      .eq("id", transactionId)
-      .eq("account_id", account.id)
-      .eq("user_id", user.id);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-  }
-
-  revalidatePath("/cash-flow");
-
-  return {
-    ok: true,
-  };
 }
 
 /* -------------------------------------------------------------------------- */
