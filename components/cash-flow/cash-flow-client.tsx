@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -11,8 +11,9 @@ import {
   LockKeyhole,
   Link2,
   Unlink2,
-  ArrowUp,
-  ArrowDown,
+  GripVertical,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -23,9 +24,10 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
-  reorderTransaction,
   reconnectStartingBalance,
   updateStartingBalance,
+  reorderTransactions,
+  moveTransaction,
 } from "@/app/(app)/cash-flow/actions";
 
 import type { MonthCalculationResult } from "@/lib/finance/balances";
@@ -109,6 +111,31 @@ export function CashFlowClient({
   const [showBalanceEditor, setShowBalanceEditor] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [orderedTransactions, setOrderedTransactions] = useState<
+    MonthCalculationResult["transactions"]
+  >(calculation?.transactions ?? []);
+
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  /*
+   * Keep track of the date group being dragged.
+   *
+   * This is important because reorderTransactions only accepts transactions
+   * from the same date.
+   */
+  const draggingDateRef = useRef<string | null>(null);
+
+  const dragPointerId = useRef<number | null>(null);
+
+  /* ------------------------------------------------------------------------ */
+  /* Sync Local Transaction Order                                             */
+  /* ------------------------------------------------------------------------ */
+
+  useEffect(() => {
+    setOrderedTransactions(calculation?.transactions ?? []);
+  }, [calculation?.transactions]);
+
   /* ------------------------------------------------------------------------ */
   /* Month Navigation                                                         */
   /* ------------------------------------------------------------------------ */
@@ -138,6 +165,255 @@ export function CashFlowClient({
         setError(err instanceof Error ? err.message : "Something went wrong.");
       }
     });
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /* Reorder Persistence                                                      */
+  /* ------------------------------------------------------------------------ */
+
+  const persistOrder = (
+    transactions: MonthCalculationResult["transactions"],
+    date: string,
+  ) => {
+    /*
+     * IMPORTANT:
+     *
+     * reorderTransactions only accepts transactions sharing the same date.
+     *
+     * Previously we sent the entire month's transaction list here, which
+     * caused the server to throw:
+     *
+     * "Transactions can only be reordered when they have the same date."
+     *
+     * Only send the reordered date group.
+     */
+    const sameDateTransactions = transactions.filter(
+      (transaction) => transaction.transactionDate === date,
+    );
+
+    const ids = sameDateTransactions.map((transaction) => transaction.id);
+
+    if (ids.length <= 1) {
+      return;
+    }
+
+    run(() => reorderTransactions({ transactionIds: ids }));
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /* Move Transaction                                                         */
+  /* ------------------------------------------------------------------------ */
+
+  const handleMove = (transactionId: string, direction: "up" | "down") => {
+    if (pending) return;
+
+    const currentIndex = orderedTransactions.findIndex(
+      (transaction) => transaction.id === transactionId,
+    );
+
+    if (currentIndex === -1) return;
+
+    const current = orderedTransactions[currentIndex];
+
+    const candidateIndex =
+      direction === "up" ? currentIndex - 1 : currentIndex + 1;
+
+    if (candidateIndex < 0 || candidateIndex >= orderedTransactions.length) {
+      return;
+    }
+
+    const candidate = orderedTransactions[candidateIndex];
+
+    /*
+     * A transaction can only move within its own date group.
+     */
+    if (candidate.transactionDate !== current.transactionDate) {
+      return;
+    }
+
+    const next = [...orderedTransactions];
+
+    [next[currentIndex], next[candidateIndex]] = [
+      next[candidateIndex],
+      next[currentIndex],
+    ];
+
+    setOrderedTransactions(next);
+
+    run(() =>
+      moveTransaction({
+        transactionId,
+        direction,
+      }),
+    );
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /* Drag Helpers                                                             */
+  /* ------------------------------------------------------------------------ */
+
+  const moveLocalTransaction = (sourceId: string, targetId: string) => {
+    if (sourceId === targetId) {
+      return orderedTransactions;
+    }
+
+    const sourceIndex = orderedTransactions.findIndex(
+      (transaction) => transaction.id === sourceId,
+    );
+
+    const targetIndex = orderedTransactions.findIndex(
+      (transaction) => transaction.id === targetId,
+    );
+
+    if (sourceIndex === -1 || targetIndex === -1) {
+      return orderedTransactions;
+    }
+
+    const source = orderedTransactions[sourceIndex];
+    const target = orderedTransactions[targetIndex];
+
+    /*
+     * Never allow a drag to cross a date boundary.
+     */
+    if (source.transactionDate !== target.transactionDate) {
+      return orderedTransactions;
+    }
+
+    const next = [...orderedTransactions];
+
+    const [moved] = next.splice(sourceIndex, 1);
+
+    const newTargetIndex = next.findIndex(
+      (transaction) => transaction.id === targetId,
+    );
+
+    if (newTargetIndex === -1) {
+      return orderedTransactions;
+    }
+
+    next.splice(newTargetIndex, 0, moved);
+
+    return next;
+  };
+
+  const handlePointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    transactionId: string,
+  ) => {
+    if (pending) return;
+
+    event.preventDefault();
+
+    const transaction = orderedTransactions.find(
+      (item) => item.id === transactionId,
+    );
+
+    if (!transaction) return;
+
+    dragPointerId.current = event.pointerId;
+    draggingDateRef.current = transaction.transactionDate;
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    setDraggingId(transactionId);
+    setDragOverId(transactionId);
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (draggingId === null || dragPointerId.current !== event.pointerId) {
+      return;
+    }
+
+    const element = document.elementFromPoint(event.clientX, event.clientY);
+
+    const row = element?.closest<HTMLElement>("[data-transaction-id]");
+
+    const targetId = row?.dataset.transactionId;
+
+    if (!targetId || targetId === draggingId) {
+      return;
+    }
+
+    const source = orderedTransactions.find(
+      (transaction) => transaction.id === draggingId,
+    );
+
+    const target = orderedTransactions.find(
+      (transaction) => transaction.id === targetId,
+    );
+
+    if (!source || !target) {
+      return;
+    }
+
+    /*
+     * Keep the drag locked to the original date.
+     */
+    if (
+      draggingDateRef.current === null ||
+      source.transactionDate !== draggingDateRef.current ||
+      target.transactionDate !== draggingDateRef.current
+    ) {
+      return;
+    }
+
+    const next = moveLocalTransaction(draggingId, targetId);
+
+    if (next !== orderedTransactions) {
+      setOrderedTransactions(next);
+      setDragOverId(targetId);
+    }
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (draggingId === null || dragPointerId.current !== event.pointerId) {
+      return;
+    }
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already have been released.
+    }
+
+    const finalOrder = orderedTransactions;
+    const dragDate = draggingDateRef.current;
+
+    setDraggingId(null);
+    setDragOverId(null);
+    dragPointerId.current = null;
+    draggingDateRef.current = null;
+
+    /*
+     * Only persist the date group that was actually dragged.
+     *
+     * This prevents reorderTransactions from receiving transactions from
+     * multiple dates.
+     */
+    if (dragDate && finalOrder.length > 0) {
+      persistOrder(finalOrder, dragDate);
+    }
+  };
+
+  const handlePointerCancel = (
+    event: React.PointerEvent<HTMLButtonElement>,
+  ) => {
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already have been released.
+    }
+
+    setDraggingId(null);
+    setDragOverId(null);
+
+    dragPointerId.current = null;
+    draggingDateRef.current = null;
+
+    /*
+     * Re-sync from the server calculation if a drag is cancelled.
+     */
+    setOrderedTransactions(calculation?.transactions ?? []);
   };
 
   /* ------------------------------------------------------------------------ */
@@ -308,6 +584,13 @@ export function CashFlowClient({
                   This is your original starting balance.
                 </p>
               )}
+
+              {orderedTransactions.length > 1 && (
+                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                  Drag transactions using the handle, or use the arrows to
+                  reorder transactions on the same date.
+                </p>
+              )}
             </div>
 
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
@@ -331,46 +614,33 @@ export function CashFlowClient({
           </div>
 
           {/* -------------------------------------------------------------- */}
-          {/* Transactions Table                                              */}
+          {/* Transactions                                                     */}
           {/* -------------------------------------------------------------- */}
 
-          <Card className="overflow-hidden">
-            {/* Desktop header only */}
-            <div className="hidden grid-cols-[120px_1fr_130px_100px_88px] gap-3 border-b border-[var(--border)] px-4 py-3 text-xs font-medium text-[var(--muted-foreground)] sm:grid">
-              <span>Balance</span>
-              <span>Name</span>
-              <span>Amount</span>
-              <span className="text-right">Date</span>
-              <span />
-            </div>
+          <Card className="border-0 bg-transparent shadow-none">
+            <StartingRow
+              value={calculation.startingBalance ?? 0}
+              privacy={privacy}
+              date={calculation.monthStart}
+            />
 
-            <div className="divide-y divide-[var(--border)]">
-              <StartingRow
-                value={calculation.startingBalance ?? 0}
-                privacy={privacy}
-                date={calculation.monthStart}
-              />
-
-              {calculation.transactions.length === 0 ? (
-                <div className="px-4 py-12 text-center text-sm text-[var(--muted-foreground)]">
-                  No transactions yet. Add your first income or expense.
-                </div>
-              ) : (
-                calculation.transactions.map((transaction, index) => {
-                  const previousTransaction =
-                    calculation.transactions[index - 1];
-
-                  const nextTransaction = calculation.transactions[index + 1];
+            {orderedTransactions.length === 0 ? (
+              <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-12 text-center text-sm text-[var(--muted-foreground)]">
+                No transactions yet. Add your first income or expense.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {orderedTransactions.map((transaction, index) => {
+                  const previous = orderedTransactions[index - 1];
+                  const next = orderedTransactions[index + 1];
 
                   const canMoveUp =
-                    !!previousTransaction &&
-                    previousTransaction.transactionDate ===
-                      transaction.transactionDate;
+                    Boolean(previous) &&
+                    previous.transactionDate === transaction.transactionDate;
 
                   const canMoveDown =
-                    !!nextTransaction &&
-                    nextTransaction.transactionDate ===
-                      transaction.transactionDate;
+                    Boolean(next) &&
+                    next.transactionDate === transaction.transactionDate;
 
                   return (
                     <TransactionRow
@@ -378,33 +648,25 @@ export function CashFlowClient({
                       transaction={transaction}
                       privacy={privacy}
                       pending={pending}
-                      canMoveUp={canMoveUp}
-                      canMoveDown={canMoveDown}
-                      onMoveUp={() =>
-                        run(() =>
-                          reorderTransaction({
-                            transactionId: transaction.id,
-                            direction: "up",
-                          }),
-                        )
-                      }
-                      onMoveDown={() =>
-                        run(() =>
-                          reorderTransaction({
-                            transactionId: transaction.id,
-                            direction: "down",
-                          }),
-                        )
-                      }
+                      dragging={draggingId === transaction.id}
+                      dragOver={dragOverId === transaction.id}
                       onDelete={() =>
                         run(() => deleteTransaction(transaction.id))
                       }
                       onEdit={() => setEditing(transaction)}
+                      onMoveUp={() => handleMove(transaction.id, "up")}
+                      onMoveDown={() => handleMove(transaction.id, "down")}
+                      onPointerDown={handlePointerDown}
+                      onPointerMove={handlePointerMove}
+                      onPointerUp={handlePointerUp}
+                      onPointerCancel={handlePointerCancel}
+                      canMoveUp={canMoveUp}
+                      canMoveDown={canMoveDown}
                     />
                   );
-                })
-              )}
-            </div>
+                })}
+              </div>
+            )}
           </Card>
         </>
       ) : (
@@ -519,22 +781,38 @@ function StartingRow({
   date: string;
 }) {
   return (
-    <div className="grid gap-2 px-4 py-4 sm:grid-cols-[120px_1fr_130px_100px_88px] sm:items-center sm:gap-3">
-      <div className="text-base font-semibold">
-        {privacy ? maskedMoney(value) : money(value)}
+    <div className="mb-2 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-3 sm:px-4 sm:py-4">
+      <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-2 sm:grid-cols-[32px_120px_130px_minmax(0,1fr)_100px_112px_80px] sm:items-center sm:gap-3">
+        {/* Empty drag-handle column */}
+
+        <div className="hidden sm:block" />
+
+        {/* Starting balance / running balance */}
+
+        <div className="min-w-0 text-base font-semibold">
+          {privacy ? maskedMoney(value) : money(value)}
+        </div>
+
+        {/* Empty income / expense amount column */}
+
+        <div className="hidden sm:block" />
+
+        {/* Name */}
+
+        <div className="col-span-2 min-w-0 font-medium sm:col-span-1">
+          Starting Balance
+        </div>
+
+        {/* Date */}
+
+        <div className="min-w-0 text-sm text-[var(--muted-foreground)] sm:text-left">
+          {formatDate(date)}
+        </div>
+
+        {/* Empty actions column */}
+
+        <div className="hidden sm:block" />
       </div>
-
-      <div className="font-medium">Starting Balance</div>
-
-      <div className="text-sm font-medium">
-        {privacy ? maskedMoney(value) : money(value)}
-      </div>
-
-      <div className="text-sm text-[var(--muted-foreground)] sm:text-right">
-        {formatDate(date)}
-      </div>
-
-      <div />
     </div>
   );
 }
@@ -547,106 +825,172 @@ function TransactionRow({
   transaction,
   privacy,
   pending,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
+  dragging,
+  dragOver,
   onDelete,
   onEdit,
+  onMoveUp,
+  onMoveDown,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+  canMoveUp,
+  canMoveDown,
 }: {
   transaction: MonthCalculationResult["transactions"][number];
   privacy: boolean;
   pending: boolean;
-  canMoveUp: boolean;
-  canMoveDown: boolean;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
+  dragging: boolean;
+  dragOver: boolean;
   onDelete: () => void;
   onEdit: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onPointerDown: (
+    event: React.PointerEvent<HTMLButtonElement>,
+    transactionId: string,
+  ) => void;
+  onPointerMove: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onPointerCancel: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
 }) {
   return (
-    <div className="grid gap-3 px-4 py-4 sm:grid-cols-[120px_1fr_130px_100px_88px] sm:items-center sm:gap-3">
-      {/* Balance */}
-      <div className="text-base font-semibold">
-        {privacy
-          ? maskedMoney(transaction.runningBalance)
-          : money(transaction.runningBalance)}
-      </div>
+    <div
+      data-transaction-id={transaction.id}
+      className={[
+        "relative rounded-2xl border bg-[var(--card)] px-3 py-3 transition-all sm:px-4 sm:py-4",
+        dragging
+          ? "scale-[1.01] opacity-60 shadow-lg"
+          : "border-[var(--border)]",
+        dragOver && !dragging
+          ? "border-[var(--foreground)] ring-1 ring-[var(--foreground)]/20"
+          : "",
+      ].join(" ")}
+    >
+      <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-3 sm:grid-cols-[32px_120px_130px_minmax(0,1fr)_100px_112px_80px] sm:items-center sm:gap-3">
+        {/* -------------------------------------------------------------- */}
+        {/* Drag Handle                                                     */}
+        {/* -------------------------------------------------------------- */}
 
-      {/* Name */}
-      <div className="min-w-0 break-words font-medium">
-        {privacy ? "Private transaction" : transaction.name}
-      </div>
+        <div className="flex items-center justify-start sm:justify-center">
+          <button
+            type="button"
+            disabled={pending}
+            aria-label={`Drag ${transaction.name}`}
+            title="Drag to reorder"
+            onPointerDown={(event) => onPointerDown(event, transaction.id)}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
+            className="flex h-9 w-9 touch-none cursor-grab items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-muted hover:text-foreground active:cursor-grabbing"
+          >
+            <GripVertical size={18} />
+          </button>
+        </div>
 
-      {/* Amount */}
-      <div
-        className={`font-medium ${
-          transaction.amount < 0
-            ? "text-red-600 dark:text-red-300"
-            : "text-emerald-700 dark:text-emerald-300"
-        }`}
-      >
-        {privacy
-          ? maskedMoney(transaction.amount)
-          : `${transaction.amount > 0 ? "+" : "-"}${money(
-              Math.abs(transaction.amount),
-            )}`}
-      </div>
+        {/* -------------------------------------------------------------- */}
+        {/* Running Balance                                                 */}
+        {/* -------------------------------------------------------------- */}
 
-      {/* Date + actions */}
-      <div className="flex items-center justify-between gap-3 sm:contents">
-        <div className="text-sm text-[var(--muted-foreground)] sm:text-right">
+        <div className="min-w-0 text-base font-semibold">
+          {privacy
+            ? maskedMoney(transaction.runningBalance)
+            : money(transaction.runningBalance)}
+        </div>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Income / Expense Amount                                         */}
+        {/* -------------------------------------------------------------- */}
+
+        <div
+          className={`min-w-0 font-medium ${
+            transaction.amount < 0
+              ? "text-red-600 dark:text-red-300"
+              : "text-emerald-700 dark:text-emerald-300"
+          }`}
+        >
+          {privacy
+            ? maskedMoney(transaction.amount)
+            : `${transaction.amount > 0 ? "+" : "-"}${money(
+                Math.abs(transaction.amount),
+              )}`}
+        </div>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Name                                                             */}
+        {/* -------------------------------------------------------------- */}
+
+        <div className="col-span-2 min-w-0 break-words font-medium sm:col-span-1">
+          {privacy ? "Private transaction" : transaction.name}
+        </div>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Date                                                             */}
+        {/* -------------------------------------------------------------- */}
+
+        <div className="min-w-0 whitespace-nowrap text-sm text-[var(--muted-foreground)] sm:text-left">
           {formatDate(transaction.transactionDate)}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
-          {/* Move Up */}
-          <button
-            type="button"
-            disabled={pending || !canMoveUp}
-            onClick={onMoveUp}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/5"
-            aria-label={`Move ${transaction.name} up`}
-            title="Move up"
-          >
-            <ArrowUp size={16} />
-          </button>
+        {/* -------------------------------------------------------------- */}
+        {/* Reorder + Edit/Delete                                            */}
+        {/* -------------------------------------------------------------- */}
 
-          {/* Move Down */}
-          <button
-            type="button"
-            disabled={pending || !canMoveDown}
-            onClick={onMoveDown}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30 dark:hover:bg-white/5"
-            aria-label={`Move ${transaction.name} down`}
-            title="Move down"
-          >
-            <ArrowDown size={16} />
-          </button>
+        <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-1 sm:justify-end">
+          {/* Up / Down */}
 
-          {/* Edit */}
-          <button
-            type="button"
-            disabled={pending}
-            onClick={onEdit}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
-            aria-label={`Edit ${transaction.name}`}
-            title="Edit"
-          >
-            <Pencil size={16} />
-          </button>
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              disabled={pending || !canMoveUp}
+              onClick={onMoveUp}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+              aria-label={`Move ${transaction.name} up`}
+              title="Move up"
+            >
+              <ChevronUp size={16} />
+            </button>
 
-          {/* Delete */}
-          <button
-            type="button"
-            disabled={pending}
-            onClick={onDelete}
-            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
-            aria-label={`Delete ${transaction.name}`}
-            title="Delete"
-          >
-            <Trash2 size={16} />
-          </button>
+            <button
+              type="button"
+              disabled={pending || !canMoveDown}
+              onClick={onMoveDown}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+              aria-label={`Move ${transaction.name} down`}
+              title="Move down"
+            >
+              <ChevronDown size={16} />
+            </button>
+          </div>
+
+          {/* Edit / Delete */}
+
+          <div className="flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={onEdit}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-muted hover:text-foreground"
+              aria-label={`Edit ${transaction.name}`}
+              title="Edit"
+            >
+              <Pencil size={16} />
+            </button>
+
+            <button
+              type="button"
+              disabled={pending}
+              onClick={onDelete}
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-colors hover:bg-muted hover:text-red-600"
+              aria-label={`Delete ${transaction.name}`}
+              title="Delete"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -830,8 +1174,6 @@ function TransactionDialog({
         </div>
 
         <div className="mt-5 space-y-4">
-          {/* Type */}
-
           <label className="block text-sm font-medium">
             Type
             <select
@@ -844,8 +1186,6 @@ function TransactionDialog({
             </select>
           </label>
 
-          {/* Name */}
-
           <label className="block text-sm font-medium">
             Name
             <input
@@ -855,8 +1195,6 @@ function TransactionDialog({
               placeholder="Rent"
             />
           </label>
-
-          {/* Amount */}
 
           <div>
             <label className="block text-sm font-medium">Amount</label>
@@ -889,8 +1227,6 @@ function TransactionDialog({
                 : "This will be recorded as a positive cash-flow amount."}
             </span>
           </div>
-
-          {/* Date */}
 
           <label className="block text-sm font-medium">
             Date
