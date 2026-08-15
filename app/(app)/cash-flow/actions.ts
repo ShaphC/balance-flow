@@ -222,6 +222,80 @@ export async function deleteTransaction(id: string) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Reorder Transactions                                                       */
+/* -------------------------------------------------------------------------- */
+
+const reorderTransactionsSchema = z.object({
+  transactionIds: z.array(idSchema).min(1),
+});
+
+export async function reorderTransactions(input: unknown) {
+  const parsed = reorderTransactionsSchema.parse(input);
+
+  const { supabase, user } = await getUser();
+
+  /* ---------------------------------------------------------------------- */
+  /* Find account                                                           */
+  /* ---------------------------------------------------------------------- */
+
+  const { data: account } = await supabase
+    .from("financial_accounts")
+    .select("id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!account) {
+    throw new Error("Cash Flow account not found.");
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Verify transactions belong to this account                             */
+  /* ---------------------------------------------------------------------- */
+
+  const { data: transactions, error: fetchError } = await supabase
+    .from("transactions")
+    .select("id")
+    .eq("account_id", account.id)
+    .eq("user_id", user.id)
+    .in("id", parsed.transactionIds);
+
+  if (fetchError) {
+    throw new Error(fetchError.message);
+  }
+
+  if (!transactions || transactions.length !== parsed.transactionIds.length) {
+    throw new Error("One or more transactions could not be found.");
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Save new order                                                         */
+  /* ---------------------------------------------------------------------- */
+
+  for (let index = 0; index < parsed.transactionIds.length; index++) {
+    const transactionId = parsed.transactionIds[index];
+
+    const { error } = await supabase
+      .from("transactions")
+      .update({
+        sort_order: (index + 1) * 1000,
+      })
+      .eq("id", transactionId)
+      .eq("account_id", account.id)
+      .eq("user_id", user.id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  revalidatePath("/cash-flow");
+
+  return {
+    ok: true,
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Update Starting Balance                                                    */
 /* -------------------------------------------------------------------------- */
 
