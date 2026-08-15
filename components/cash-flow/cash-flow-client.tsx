@@ -59,16 +59,6 @@ function monthLabel(month: string) {
   }).format(new Date(`${month}-01T12:00:00`));
 }
 
-/**
- * Converts user-entered currency text into a number.
- *
- * Supports:
- * 3900
- * 3900.5
- * 3900.50
- * $3900.50
- * 3,900.50
- */
 function parseAmount(value: string) {
   const cleaned = value.replace(/[$,\s]/g, "");
   const parsed = Number(cleaned);
@@ -76,9 +66,6 @@ function parseAmount(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/**
- * Formats a typed amount to two decimals.
- */
 function formatInputAmount(value: string) {
   if (!value.trim()) return "";
 
@@ -164,8 +151,8 @@ export function CashFlowClient({
       {/* ------------------------------------------------------------------ */}
 
       <header className="mb-5 flex flex-col gap-4 sm:mb-7 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="mb-2 flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <p className="text-sm text-[var(--muted-foreground)]">Cash Flow</p>
 
             {privacy && (
@@ -176,23 +163,23 @@ export function CashFlowClient({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
             <Button
               variant="ghost"
-              className="px-2"
+              className="shrink-0 px-2"
               aria-label="Previous month"
               onClick={() => goMonth(-1)}
             >
               <ChevronLeft size={20} />
             </Button>
 
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            <h1 className="min-w-0 truncate text-xl font-semibold tracking-tight sm:text-3xl">
               {monthLabel(month)}
             </h1>
 
             <Button
               variant="ghost"
-              className="px-2"
+              className="shrink-0 px-2"
               aria-label="Next month"
               onClick={() => goMonth(1)}
             >
@@ -203,6 +190,7 @@ export function CashFlowClient({
 
         <Button
           variant={privacy ? "default" : "outline"}
+          className="w-full sm:w-auto"
           onClick={() => setPrivacy((value) => !value)}
         >
           <LockKeyhole size={16} className="mr-2" />
@@ -245,7 +233,7 @@ export function CashFlowClient({
           {/* -------------------------------------------------------------- */}
 
           <Card className="mb-5 overflow-hidden">
-            <div className="grid gap-px bg-[var(--border)] sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-px bg-[var(--border)] sm:grid-cols-4">
               <Metric
                 label="Starting Balance"
                 value={calculation.startingBalance ?? 0}
@@ -285,6 +273,7 @@ export function CashFlowClient({
 
                 <Button
                   variant="outline"
+                  className="w-full sm:w-auto"
                   disabled={pending}
                   onClick={() =>
                     run(() => reconnectStartingBalance(`${month}-01`))
@@ -301,8 +290,8 @@ export function CashFlowClient({
           {/* Transactions Header                                             */}
           {/* -------------------------------------------------------------- */}
 
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
               <p className="text-sm font-medium">Transactions</p>
 
               {calculation.startingBalanceSource === "previous_month" && (
@@ -318,16 +307,20 @@ export function CashFlowClient({
               )}
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
               <Button
                 variant="outline"
+                className="w-full sm:w-auto"
                 onClick={() => setShowBalanceEditor(true)}
               >
                 <Pencil size={15} className="mr-2" />
                 Starting balance
               </Button>
 
-              <Button onClick={() => setShowAdd(true)}>
+              <Button
+                className="w-full sm:w-auto"
+                onClick={() => setShowAdd(true)}
+              >
                 <Plus size={16} className="mr-2" />
                 Add transaction
               </Button>
@@ -339,6 +332,7 @@ export function CashFlowClient({
           {/* -------------------------------------------------------------- */}
 
           <Card className="overflow-hidden">
+            {/* Desktop header only */}
             <div className="hidden grid-cols-[120px_1fr_130px_100px_88px] gap-3 border-b border-[var(--border)] px-4 py-3 text-xs font-medium text-[var(--muted-foreground)] sm:grid">
               <span>Balance</span>
               <span>Name</span>
@@ -457,14 +451,14 @@ function Metric({
   strong?: boolean;
 }) {
   return (
-    <div className="bg-[var(--card)] p-4 sm:p-5">
-      <p className="text-xs font-medium text-[var(--muted-foreground)]">
+    <div className="min-w-0 bg-[var(--card)] p-3 sm:p-5">
+      <p className="truncate text-xs font-medium text-[var(--muted-foreground)]">
         {label}
       </p>
 
       <p
-        className={`mt-1 text-xl ${
-          strong ? "font-semibold sm:text-2xl" : "font-medium"
+        className={`mt-1 truncate text-lg ${
+          strong ? "font-semibold sm:text-2xl" : "font-medium sm:text-xl"
         }`}
       >
         {privacy ? maskedMoney(value) : money(value)}
@@ -487,7 +481,7 @@ function StartingRow({
   date: string;
 }) {
   return (
-    <div className="grid gap-1 px-4 py-4 sm:grid-cols-[120px_1fr_130px_100px_88px] sm:items-center sm:gap-3">
+    <div className="grid gap-2 px-4 py-4 sm:grid-cols-[120px_1fr_130px_100px_88px] sm:items-center sm:gap-3">
       <div className="text-base font-semibold">
         {privacy ? maskedMoney(value) : money(value)}
       </div>
@@ -525,17 +519,20 @@ function TransactionRow({
   onEdit: () => void;
 }) {
   return (
-    <div className="grid gap-2 px-4 py-4 sm:grid-cols-[120px_1fr_130px_100px_88px] sm:items-center sm:gap-3">
+    <div className="grid gap-3 px-4 py-4 sm:grid-cols-[120px_1fr_130px_100px_88px] sm:items-center sm:gap-3">
+      {/* Balance */}
       <div className="text-base font-semibold">
         {privacy
           ? maskedMoney(transaction.runningBalance)
           : money(transaction.runningBalance)}
       </div>
 
+      {/* Name */}
       <div className="min-w-0 break-words font-medium">
         {privacy ? "Private transaction" : transaction.name}
       </div>
 
+      {/* Amount */}
       <div
         className={`font-medium ${
           transaction.amount < 0
@@ -550,30 +547,33 @@ function TransactionRow({
             )}`}
       </div>
 
-      <div className="text-sm text-[var(--muted-foreground)] sm:text-right">
-        {formatDate(transaction.transactionDate)}
-      </div>
+      {/* Date + actions */}
+      <div className="flex items-center justify-between gap-3 sm:contents">
+        <div className="text-sm text-[var(--muted-foreground)] sm:text-right">
+          {formatDate(transaction.transactionDate)}
+        </div>
 
-      <div className="flex items-center gap-1">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={onEdit}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
-          aria-label={`Edit ${transaction.name}`}
-        >
-          <Pencil size={16} />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onEdit}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
+            aria-label={`Edit ${transaction.name}`}
+          >
+            <Pencil size={16} />
+          </button>
 
-        <button
-          type="button"
-          disabled={pending}
-          onClick={onDelete}
-          className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
-          aria-label={`Delete ${transaction.name}`}
-        >
-          <Trash2 size={16} />
-        </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onDelete}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted-foreground)] hover:bg-black/5 hover:text-red-600 dark:hover:bg-white/5"
+            aria-label={`Delete ${transaction.name}`}
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -604,10 +604,6 @@ function SetupCard({
   };
 
   const handleBalanceFocus = () => {
-    /*
-     * Treat 0.00 as a placeholder if it ever exists in this field.
-     * This lets the user immediately type a new amount.
-     */
     if (balance === "0.00") {
       setBalance("");
     }
@@ -672,7 +668,7 @@ function SetupCard({
         </div>
       </div>
 
-      <div className="mt-5 flex gap-2">
+      <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row">
         {onCancel && (
           <Button variant="ghost" onClick={onCancel}>
             Cancel
@@ -680,6 +676,7 @@ function SetupCard({
         )}
 
         <Button
+          className="w-full sm:w-auto"
           disabled={pending}
           onClick={() => onSubmit(date, parseAmount(balance))}
         >
@@ -728,10 +725,6 @@ function TransactionDialog({
   };
 
   const handleAmountFocus = () => {
-    /*
-     * If the field contains the formatted zero value, clear it so
-     * the user can start typing immediately.
-     */
     if (amount === "0.00") {
       setAmount("");
     }
@@ -745,9 +738,9 @@ function TransactionDialog({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
-      <div className="w-full max-w-md rounded-t-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-2xl sm:rounded-3xl">
-        <div className="flex items-center justify-between">
-          <div>
+      <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-2xl sm:rounded-3xl">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
             <p className="text-sm font-medium text-[var(--muted-foreground)]">
               Cash Flow
             </p>
@@ -757,7 +750,7 @@ function TransactionDialog({
             </h2>
           </div>
 
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" className="shrink-0" onClick={onClose}>
             Close
           </Button>
         </div>
@@ -836,12 +829,13 @@ function TransactionDialog({
           </label>
         </div>
 
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row">
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
 
           <Button
+            className="w-full sm:w-auto"
             disabled={pending || !name.trim() || parseAmount(amount) <= 0}
             onClick={() =>
               onSubmit(
@@ -891,13 +885,6 @@ function BalanceDialog({
   onClose: () => void;
   onSubmit: (value: number) => void;
 }) {
-  /*
-   * A zero starting balance should behave like a placeholder.
-   *
-   * Existing non-zero balances remain visible.
-   *
-   * If the initial balance is actually $0.00, the input starts empty.
-   */
   const [value, setValue] = useState(current === 0 ? "" : current.toFixed(2));
 
   const handleChange = (input: string) => {
@@ -907,32 +894,12 @@ function BalanceDialog({
   };
 
   const handleFocus = () => {
-    /*
-     * This is the important part:
-     *
-     * If the field is showing 0.00, remove it immediately when
-     * the user clicks/taps into the field.
-     *
-     * The user can then type:
-     *
-     * 500
-     * 1250
-     * 3900.50
-     *
-     * without having to delete 0.00 first.
-     */
     if (value === "0.00") {
       setValue("");
     }
   };
 
   const handleBlur = () => {
-    /*
-     * Keep an empty field empty.
-     *
-     * We intentionally do NOT turn it back into 0.00.
-     * The placeholder handles the visual zero state.
-     */
     if (!value.trim()) return;
 
     setValue(formatInputAmount(value));
@@ -998,12 +965,16 @@ function BalanceDialog({
           </div>
         </div>
 
-        <div className="mt-6 flex gap-2">
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row">
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
 
-          <Button disabled={pending} onClick={handleSubmit}>
+          <Button
+            className="w-full sm:w-auto"
+            disabled={pending}
+            onClick={handleSubmit}
+          >
             {isInitialBalance ? "Save starting balance" : "Save override"}
           </Button>
         </div>
