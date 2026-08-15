@@ -706,8 +706,12 @@ export function CashFlowClient({
           month={month}
           pending={pending}
           onClose={() => setShowAdd(false)}
-          onSubmit={(input) =>
-            run(() => createTransaction(input).then(() => setShowAdd(false)))
+          onSubmit={(input, onSuccess) =>
+            run(() =>
+              createTransaction(input).then(() => {
+                onSuccess();
+              }),
+            )
           }
         />
       )}
@@ -722,8 +726,12 @@ export function CashFlowClient({
           transaction={editing}
           pending={pending}
           onClose={() => setEditing(null)}
-          onSubmit={(input) =>
-            run(() => updateTransaction(input).then(() => setEditing(null)))
+          onSubmit={(input, onSuccess) =>
+            run(() =>
+              updateTransaction(input).then(() => {
+                onSuccess();
+              }),
+            )
           }
         />
       )}
@@ -1231,8 +1239,10 @@ function TransactionDialog({
   transaction?: MonthCalculationResult["transactions"][number];
   pending: boolean;
   onClose: () => void;
-  onSubmit: (input: unknown) => void;
+  onSubmit: (input: unknown, onSuccess: () => void) => void;
 }) {
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
   const [name, setName] = useState(transaction?.name ?? "");
 
   const [amount, setAmount] = useState(
@@ -1263,6 +1273,57 @@ function TransactionDialog({
     if (!amount.trim()) return;
 
     setAmount(formatInputAmount(amount));
+  };
+
+  /*
+   * Reset only the fields that normally change between transactions.
+   *
+   * Keeping the date and type makes rapid entry much faster when adding
+   * several expenses or several income transactions in a row.
+   */
+  const resetForNextTransaction = () => {
+    setName("");
+    setAmount("");
+
+    requestAnimationFrame(() => {
+      nameInputRef.current?.focus();
+    });
+  };
+
+  const handleSubmit = (keepOpen: boolean) => {
+    if (pending || !name.trim() || parseAmount(amount) <= 0) {
+      return;
+    }
+
+    const input = transaction
+      ? {
+          id: transaction.id,
+          name,
+          amount: parseAmount(amount),
+          transactionDate: date,
+          type,
+          recurrence: "once",
+        }
+      : {
+          name,
+          amount: parseAmount(amount),
+          transactionDate: date,
+          type,
+          recurrence: "once",
+        };
+
+    onSubmit(input, () => {
+      if (transaction) {
+        onClose();
+        return;
+      }
+
+      if (keepOpen) {
+        resetForNextTransaction();
+      } else {
+        onClose();
+      }
+    });
   };
 
   return (
@@ -1300,10 +1361,12 @@ function TransactionDialog({
           <label className="block text-sm font-medium">
             Name
             <input
+              ref={nameInputRef}
               className="mt-2 h-11 w-full rounded-xl border border-[var(--border)] bg-transparent px-3"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Rent"
+              autoFocus
             />
           </label>
 
@@ -1350,37 +1413,32 @@ function TransactionDialog({
           </label>
         </div>
 
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
+        <div className="mt-6 flex flex-col gap-2">
+          {!transaction && (
+            <Button
+              variant="outline"
+              className="w-full"
+              disabled={pending || !name.trim() || parseAmount(amount) <= 0}
+              onClick={() => handleSubmit(true)}
+            >
+              <Plus size={16} className="mr-2" />
+              Save & add another
+            </Button>
+          )}
 
-          <Button
-            className="w-full sm:w-auto"
-            disabled={pending || !name.trim() || parseAmount(amount) <= 0}
-            onClick={() =>
-              onSubmit(
-                transaction
-                  ? {
-                      id: transaction.id,
-                      name,
-                      amount: parseAmount(amount),
-                      transactionDate: date,
-                      type,
-                      recurrence: "once",
-                    }
-                  : {
-                      name,
-                      amount: parseAmount(amount),
-                      transactionDate: date,
-                      type,
-                      recurrence: "once",
-                    },
-              )
-            }
-          >
-            {transaction ? "Save changes" : "Add transaction"}
-          </Button>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+
+            <Button
+              className="w-full sm:w-auto"
+              disabled={pending || !name.trim() || parseAmount(amount) <= 0}
+              onClick={() => handleSubmit(false)}
+            >
+              {transaction ? "Save changes" : "Add transaction"}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
