@@ -5,9 +5,12 @@ import { usePathname } from "next/navigation";
 import {
   Calculator,
   CircleDollarSign,
+  Moon,
   Settings,
+  Sun,
   WalletCards,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 
 const navigation = [
   {
@@ -44,6 +47,9 @@ const navigation = [
 
 export function FloatingNav() {
   const pathname = usePathname();
+  const { theme, setTheme } = useTheme();
+
+  const isDark = theme === "dark";
 
   return (
     <nav className="fixed inset-x-0 bottom-4 z-50 px-3">
@@ -60,6 +66,7 @@ export function FloatingNav() {
                 title="Coming later"
               >
                 <Icon className="size-5" />
+
                 <span className="hidden text-[10px] sm:block">
                   {item.label}
                 </span>
@@ -85,6 +92,21 @@ export function FloatingNav() {
             </Link>
           );
         })}
+
+        {/* Theme toggle */}
+
+        <button
+          type="button"
+          onClick={() => setTheme(isDark ? "light" : "dark")}
+          className="flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+        >
+          {isDark ? <Sun className="size-5" /> : <Moon className="size-5" />}
+
+          <span className="hidden text-[10px] font-medium sm:block">
+            {isDark ? "Light" : "Dark"}
+          </span>
+        </button>
       </div>
     </nav>
   );
