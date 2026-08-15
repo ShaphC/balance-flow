@@ -451,12 +451,12 @@ export function CashFlowClient({
   }, []);
 
   return (
-    <main className="mx-auto flex h-[100dvh] w-full max-w-6xl flex-col overflow-hidden px-4 sm:px-6">
+    <main className="mx-auto flex h-auto w-full max-w-6xl flex-col overflow-visible px-4 sm:px-6 lg:h-[100dvh] lg:overflow-hidden">
       {/* ------------------------------------------------------------------ */}
-      {/* Fixed Dashboard Section                                            */}
+      {/* Fixed Dashboard Section — Desktop Only                            */}
       {/* ------------------------------------------------------------------ */}
 
-      <div className="shrink-0 bg-[var(--background)] pt-5 sm:pt-8">
+      <div className="shrink-0 bg-[var(--background)] pt-5 sm:pt-8 lg:sticky lg:top-0 lg:z-40">
         {/* -------------------------------------------------------------- */}
         {/* Header                                                           */}
         {/* -------------------------------------------------------------- */}
@@ -669,7 +669,7 @@ export function CashFlowClient({
       {/* ------------------------------------------------------------------ */}
 
       {!hasAccount || showSetup ? null : calculation && summary ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-28 pt-1">
+        <div className="pb-28 pt-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
           <Card className="border-0 bg-transparent shadow-none">
             {orderedTransactions.length === 0 ? (
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-12 text-center text-sm text-[var(--muted-foreground)]">
