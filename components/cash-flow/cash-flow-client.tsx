@@ -451,206 +451,226 @@ export function CashFlowClient({
   }, []);
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-4 py-5 pb-28 sm:px-6 sm:py-8">
+    <main className="mx-auto flex h-[100dvh] w-full max-w-6xl flex-col overflow-hidden px-4 sm:px-6">
       {/* ------------------------------------------------------------------ */}
-      {/* Header                                                             */}
+      {/* Fixed Dashboard Section                                            */}
       {/* ------------------------------------------------------------------ */}
 
-      <header className="mb-5 flex flex-col gap-4 sm:mb-7 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <p className="text-sm text-[var(--muted-foreground)]">Cash Flow</p>
+      <div className="shrink-0 bg-[var(--background)] pt-5 sm:pt-8">
+        {/* -------------------------------------------------------------- */}
+        {/* Header                                                           */}
+        {/* -------------------------------------------------------------- */}
 
-            {privacy && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-1 text-[11px] font-medium">
-                <LockKeyhole size={12} />
-                Privacy Mode
-              </span>
-            )}
+        <header className="mb-5 flex flex-col gap-4 sm:mb-7 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <p className="text-sm text-[var(--muted-foreground)]">
+                Cash Flow
+              </p>
+
+              {privacy && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-1 text-[11px] font-medium">
+                  <LockKeyhole size={12} />
+                  Privacy Mode
+                </span>
+              )}
+            </div>
+
+            <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+              <Button
+                variant="ghost"
+                className="shrink-0 px-2"
+                aria-label="Previous month"
+                onClick={() => goMonth(-1)}
+              >
+                <ChevronLeft size={20} />
+              </Button>
+
+              <h1 className="min-w-0 truncate text-xl font-semibold tracking-tight sm:text-3xl">
+                {monthLabel(month)}
+              </h1>
+
+              <Button
+                variant="ghost"
+                className="shrink-0 px-2"
+                aria-label="Next month"
+                onClick={() => goMonth(1)}
+              >
+                <ChevronRight size={20} />
+              </Button>
+            </div>
           </div>
 
-          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
-            <Button
-              variant="ghost"
-              className="shrink-0 px-2"
-              aria-label="Previous month"
-              onClick={() => goMonth(-1)}
-            >
-              <ChevronLeft size={20} />
-            </Button>
+          <Button
+            variant={privacy ? "default" : "outline"}
+            className="w-full sm:w-auto"
+            onClick={() => setPrivacy((value) => !value)}
+          >
+            <LockKeyhole size={16} className="mr-2" />
+            {privacy ? "Privacy On" : "Privacy Mode"}
+          </Button>
+        </header>
 
-            <h1 className="min-w-0 truncate text-xl font-semibold tracking-tight sm:text-3xl">
-              {monthLabel(month)}
-            </h1>
+        {/* -------------------------------------------------------------- */}
+        {/* Error                                                            */}
+        {/* -------------------------------------------------------------- */}
 
-            <Button
-              variant="ghost"
-              className="shrink-0 px-2"
-              aria-label="Next month"
-              onClick={() => goMonth(1)}
-            >
-              <ChevronRight size={20} />
-            </Button>
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+            {error}
           </div>
-        </div>
+        )}
 
-        <Button
-          variant={privacy ? "default" : "outline"}
-          className="w-full sm:w-auto"
-          onClick={() => setPrivacy((value) => !value)}
-        >
-          <LockKeyhole size={16} className="mr-2" />
-          {privacy ? "Privacy On" : "Privacy Mode"}
-        </Button>
-      </header>
+        {/* -------------------------------------------------------------- */}
+        {/* Initial Setup                                                    */}
+        {/* -------------------------------------------------------------- */}
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Error                                                              */}
-      {/* ------------------------------------------------------------------ */}
+        {!hasAccount || showSetup ? (
+          <SetupCard
+            initialDate={`${month}-01`}
+            pending={pending}
+            onCancel={hasAccount ? () => setShowSetup(false) : undefined}
+            onSubmit={(initialDate, initialBalance) =>
+              run(() =>
+                createCashFlowSetup({
+                  initialDate,
+                  initialBalance,
+                }).then(() => setShowSetup(false)),
+              )
+            }
+          />
+        ) : calculation && summary ? (
+          <>
+            {/* ---------------------------------------------------------- */}
+            {/* Summary                                                     */}
+            {/* ---------------------------------------------------------- */}
 
-      {error && (
-        <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
-          {error}
-        </div>
-      )}
+            <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Metric
+                label="Starting Balance"
+                value={calculation.startingBalance ?? 0}
+                privacy={privacy}
+              />
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Initial Setup                                                       */}
-      {/* ------------------------------------------------------------------ */}
+              <Metric
+                label="Income"
+                value={summary.totalIncome}
+                privacy={privacy}
+              />
 
-      {!hasAccount || showSetup ? (
-        <SetupCard
-          initialDate={`${month}-01`}
-          pending={pending}
-          onCancel={hasAccount ? () => setShowSetup(false) : undefined}
-          onSubmit={(initialDate, initialBalance) =>
-            run(() =>
-              createCashFlowSetup({
-                initialDate,
-                initialBalance,
-              }).then(() => setShowSetup(false)),
-            )
-          }
-        />
-      ) : calculation && summary ? (
-        <>
-          {/* -------------------------------------------------------------- */}
-          {/* Summary                                                         */}
-          {/* -------------------------------------------------------------- */}
+              <Metric
+                label="Expenses"
+                value={-summary.totalExpenses}
+                privacy={privacy}
+              />
 
-          <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Metric
-              label="Starting Balance"
-              value={calculation.startingBalance ?? 0}
-              privacy={privacy}
-            />
+              <Metric
+                label="Ending Balance"
+                value={summary.endingBalance}
+                privacy={privacy}
+                strong
+              />
+            </div>
 
-            <Metric
-              label="Income"
-              value={summary.totalIncome}
-              privacy={privacy}
-            />
+            {/* ---------------------------------------------------------- */}
+            {/* Override Notice                                              */}
+            {/* ---------------------------------------------------------- */}
 
-            <Metric
-              label="Expenses"
-              value={-summary.totalExpenses}
-              privacy={privacy}
-            />
+            {isOverride && (
+              <div className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-2">
+                    <Unlink2 size={16} className="mt-0.5 shrink-0" />
 
-            <Metric
-              label="Ending Balance"
-              value={summary.endingBalance}
-              privacy={privacy}
-              strong
-            />
-          </div>
+                    <span>
+                      This month's starting balance is intentionally
+                      disconnected from the previous month's ending balance.
+                    </span>
+                  </div>
 
-          {isOverride && (
-            <div className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-start gap-2">
-                  <Unlink2 size={16} className="mt-0.5 shrink-0" />
-
-                  <span>
-                    This month's starting balance is intentionally disconnected
-                    from the previous month's ending balance.
-                  </span>
+                  <Button
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                    disabled={pending}
+                    onClick={() =>
+                      run(() => reconnectStartingBalance(`${month}-01`))
+                    }
+                  >
+                    <Link2 size={15} className="mr-2" />
+                    Reconnect
+                  </Button>
                 </div>
+              </div>
+            )}
 
+            {/* ---------------------------------------------------------- */}
+            {/* Transactions Header                                         */}
+            {/* ---------------------------------------------------------- */}
+
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Transactions</p>
+
+                {calculation.startingBalanceSource === "previous_month" && (
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    Starting balance comes from the previous month.
+                  </p>
+                )}
+
+                {calculation.startingBalanceSource === "initial" && (
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    This is your original starting balance.
+                  </p>
+                )}
+
+                {orderedTransactions.length > 1 && (
+                  <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+                    Drag transactions using the handle, or use the arrows to
+                    reorder transactions on the same date.
+                  </p>
+                )}
+              </div>
+
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
                 <Button
                   variant="outline"
                   className="w-full sm:w-auto"
-                  disabled={pending}
-                  onClick={() =>
-                    run(() => reconnectStartingBalance(`${month}-01`))
-                  }
+                  onClick={() => setShowBalanceEditor(true)}
                 >
-                  <Link2 size={15} className="mr-2" />
-                  Reconnect
+                  <Pencil size={15} className="mr-2" />
+                  Starting balance
+                </Button>
+
+                <Button
+                  className="w-full sm:w-auto"
+                  onClick={() => setShowAdd(true)}
+                >
+                  <Plus size={16} className="mr-2" />
+                  Add transaction
                 </Button>
               </div>
             </div>
-          )}
 
-          {/* -------------------------------------------------------------- */}
-          {/* Transactions Header                                             */}
-          {/* -------------------------------------------------------------- */}
+            {/* ---------------------------------------------------------- */}
+            {/* Fixed Starting Balance                                       */}
+            {/* ---------------------------------------------------------- */}
 
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">Transactions</p>
-
-              {calculation.startingBalanceSource === "previous_month" && (
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  Starting balance comes from the previous month.
-                </p>
-              )}
-
-              {calculation.startingBalanceSource === "initial" && (
-                <p className="text-xs text-[var(--muted-foreground)]">
-                  This is your original starting balance.
-                </p>
-              )}
-
-              {orderedTransactions.length > 1 && (
-                <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                  Drag transactions using the handle, or use the arrows to
-                  reorder transactions on the same date.
-                </p>
-              )}
-            </div>
-
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto"
-                onClick={() => setShowBalanceEditor(true)}
-              >
-                <Pencil size={15} className="mr-2" />
-                Starting balance
-              </Button>
-
-              <Button
-                className="w-full sm:w-auto"
-                onClick={() => setShowAdd(true)}
-              >
-                <Plus size={16} className="mr-2" />
-                Add transaction
-              </Button>
-            </div>
-          </div>
-
-          {/* -------------------------------------------------------------- */}
-          {/* Transactions                                                     */}
-          {/* -------------------------------------------------------------- */}
-
-          <Card className="border-0 bg-transparent shadow-none">
             <StartingRow
               value={calculation.startingBalance ?? 0}
               privacy={privacy}
               date={calculation.monthStart}
             />
+          </>
+        ) : null}
+      </div>
 
+      {/* ------------------------------------------------------------------ */}
+      {/* Scrollable Transaction Area                                        */}
+      {/* ------------------------------------------------------------------ */}
+
+      {!hasAccount || showSetup ? null : calculation && summary ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-28 pt-1">
+          <Card className="border-0 bg-transparent shadow-none">
             {orderedTransactions.length === 0 ? (
               <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-12 text-center text-sm text-[var(--muted-foreground)]">
                 No transactions yet. Add your first income or expense.
@@ -686,16 +706,8 @@ export function CashFlowClient({
               </div>
             )}
           </Card>
-        </>
-      ) : (
-        <Card className="p-8 text-center">
-          <p className="font-medium">This month is not being tracked yet.</p>
-
-          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Go to your first tracking month to establish a starting balance.
-          </p>
-        </Card>
-      )}
+        </div>
+      ) : null}
 
       {/* ------------------------------------------------------------------ */}
       {/* Add Transaction                                                     */}
@@ -706,12 +718,8 @@ export function CashFlowClient({
           month={month}
           pending={pending}
           onClose={() => setShowAdd(false)}
-          onSubmit={(input, onSuccess) =>
-            run(() =>
-              createTransaction(input).then(() => {
-                onSuccess();
-              }),
-            )
+          onSubmit={(input) =>
+            run(() => createTransaction(input).then(() => setShowAdd(false)))
           }
         />
       )}
@@ -726,12 +734,8 @@ export function CashFlowClient({
           transaction={editing}
           pending={pending}
           onClose={() => setEditing(null)}
-          onSubmit={(input, onSuccess) =>
-            run(() =>
-              updateTransaction(input).then(() => {
-                onSuccess();
-              }),
-            )
+          onSubmit={(input) =>
+            run(() => updateTransaction(input).then(() => setEditing(null)))
           }
         />
       )}
@@ -1239,10 +1243,8 @@ function TransactionDialog({
   transaction?: MonthCalculationResult["transactions"][number];
   pending: boolean;
   onClose: () => void;
-  onSubmit: (input: unknown, onSuccess: () => void) => void;
+  onSubmit: (input: unknown) => void;
 }) {
-  const nameInputRef = useRef<HTMLInputElement>(null);
-
   const [name, setName] = useState(transaction?.name ?? "");
 
   const [amount, setAmount] = useState(
@@ -1273,57 +1275,6 @@ function TransactionDialog({
     if (!amount.trim()) return;
 
     setAmount(formatInputAmount(amount));
-  };
-
-  /*
-   * Reset only the fields that normally change between transactions.
-   *
-   * Keeping the date and type makes rapid entry much faster when adding
-   * several expenses or several income transactions in a row.
-   */
-  const resetForNextTransaction = () => {
-    setName("");
-    setAmount("");
-
-    requestAnimationFrame(() => {
-      nameInputRef.current?.focus();
-    });
-  };
-
-  const handleSubmit = (keepOpen: boolean) => {
-    if (pending || !name.trim() || parseAmount(amount) <= 0) {
-      return;
-    }
-
-    const input = transaction
-      ? {
-          id: transaction.id,
-          name,
-          amount: parseAmount(amount),
-          transactionDate: date,
-          type,
-          recurrence: "once",
-        }
-      : {
-          name,
-          amount: parseAmount(amount),
-          transactionDate: date,
-          type,
-          recurrence: "once",
-        };
-
-    onSubmit(input, () => {
-      if (transaction) {
-        onClose();
-        return;
-      }
-
-      if (keepOpen) {
-        resetForNextTransaction();
-      } else {
-        onClose();
-      }
-    });
   };
 
   return (
@@ -1361,12 +1312,10 @@ function TransactionDialog({
           <label className="block text-sm font-medium">
             Name
             <input
-              ref={nameInputRef}
               className="mt-2 h-11 w-full rounded-xl border border-[var(--border)] bg-transparent px-3"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Rent"
-              autoFocus
             />
           </label>
 
@@ -1413,32 +1362,37 @@ function TransactionDialog({
           </label>
         </div>
 
-        <div className="mt-6 flex flex-col gap-2">
-          {!transaction && (
-            <Button
-              variant="outline"
-              className="w-full"
-              disabled={pending || !name.trim() || parseAmount(amount) <= 0}
-              onClick={() => handleSubmit(true)}
-            >
-              <Plus size={16} className="mr-2" />
-              Save & add another
-            </Button>
-          )}
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
 
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-
-            <Button
-              className="w-full sm:w-auto"
-              disabled={pending || !name.trim() || parseAmount(amount) <= 0}
-              onClick={() => handleSubmit(false)}
-            >
-              {transaction ? "Save changes" : "Add transaction"}
-            </Button>
-          </div>
+          <Button
+            className="w-full sm:w-auto"
+            disabled={pending || !name.trim() || parseAmount(amount) <= 0}
+            onClick={() =>
+              onSubmit(
+                transaction
+                  ? {
+                      id: transaction.id,
+                      name,
+                      amount: parseAmount(amount),
+                      transactionDate: date,
+                      type,
+                      recurrence: "once",
+                    }
+                  : {
+                      name,
+                      amount: parseAmount(amount),
+                      transactionDate: date,
+                      type,
+                      recurrence: "once",
+                    },
+              )
+            }
+          >
+            {transaction ? "Save changes" : "Add transaction"}
+          </Button>
         </div>
       </div>
     </div>
