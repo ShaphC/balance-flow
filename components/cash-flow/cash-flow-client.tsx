@@ -57,6 +57,15 @@ function formatDate(value: string) {
   }).format(new Date(`${value}T12:00:00`));
 }
 
+function formatDateLong(value: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(`${value}T12:00:00`));
+}
+
 function monthLabel(month: string) {
   return new Intl.DateTimeFormat("en-CA", {
     month: "long",
@@ -180,12 +189,7 @@ export function CashFlowClient({
      *
      * reorderTransactions only accepts transactions sharing the same date.
      *
-     * Previously we sent the entire month's transaction list here, which
-     * caused the server to throw:
-     *
-     * "Transactions can only be reordered when they have the same date."
-     *
-     * Only send the reordered date group.
+     * Only send the reordered date group here.
      */
     const sameDateTransactions = transactions.filter(
       (transaction) => transaction.transactionDate === date,
@@ -386,9 +390,6 @@ export function CashFlowClient({
 
     /*
      * Only persist the date group that was actually dragged.
-     *
-     * This prevents reorderTransactions from receiving transactions from
-     * multiple dates.
      */
     if (dragDate && finalOrder.length > 0) {
       persistOrder(finalOrder, dragDate);
@@ -422,6 +423,32 @@ export function CashFlowClient({
 
   const summary = calculation?.summary;
   const isOverride = calculation?.startingBalanceSource === "override";
+
+  /*
+   * Build date groups while preserving the current transaction order.
+   *
+   * Transactions are expected to already be ordered by date and then by
+   * their custom order within that date.
+   */
+  const transactionGroups = orderedTransactions.reduce<
+    {
+      date: string;
+      transactions: MonthCalculationResult["transactions"];
+    }[]
+  >((groups, transaction) => {
+    const lastGroup = groups[groups.length - 1];
+
+    if (lastGroup?.date === transaction.transactionDate) {
+      lastGroup.transactions.push(transaction);
+    } else {
+      groups.push({
+        date: transaction.transactionDate,
+        transactions: [transaction],
+      });
+    }
+
+    return groups;
+  }, []);
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-5 pb-28 sm:px-6 sm:py-8">
@@ -511,36 +538,36 @@ export function CashFlowClient({
           {/* Summary                                                         */}
           {/* -------------------------------------------------------------- */}
 
-          <Card className="mb-5 overflow-hidden">
-            <div className="grid grid-cols-2 gap-px bg-[var(--border)] sm:grid-cols-4">
-              <Metric
-                label="Starting Balance"
-                value={calculation.startingBalance ?? 0}
-                privacy={privacy}
-              />
+          <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Metric
+              label="Starting Balance"
+              value={calculation.startingBalance ?? 0}
+              privacy={privacy}
+            />
 
-              <Metric
-                label="Income"
-                value={summary.totalIncome}
-                privacy={privacy}
-              />
+            <Metric
+              label="Income"
+              value={summary.totalIncome}
+              privacy={privacy}
+            />
 
-              <Metric
-                label="Expenses"
-                value={-summary.totalExpenses}
-                privacy={privacy}
-              />
+            <Metric
+              label="Expenses"
+              value={-summary.totalExpenses}
+              privacy={privacy}
+            />
 
-              <Metric
-                label="Ending Balance"
-                value={summary.endingBalance}
-                privacy={privacy}
-                strong
-              />
-            </div>
+            <Metric
+              label="Ending Balance"
+              value={summary.endingBalance}
+              privacy={privacy}
+              strong
+            />
+          </div>
 
-            {isOverride && (
-              <div className="flex flex-col gap-3 border-t border-[var(--border)] px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+          {isOverride && (
+            <div className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-4 py-3 text-sm">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-2">
                   <Unlink2 size={16} className="mt-0.5 shrink-0" />
 
@@ -562,8 +589,8 @@ export function CashFlowClient({
                   Reconnect
                 </Button>
               </div>
-            )}
-          </Card>
+            </div>
+          )}
 
           {/* -------------------------------------------------------------- */}
           {/* Transactions Header                                             */}
@@ -629,42 +656,33 @@ export function CashFlowClient({
                 No transactions yet. Add your first income or expense.
               </div>
             ) : (
-              <div className="space-y-2">
-                {orderedTransactions.map((transaction, index) => {
-                  const previous = orderedTransactions[index - 1];
-                  const next = orderedTransactions[index + 1];
-
-                  const canMoveUp =
-                    Boolean(previous) &&
-                    previous.transactionDate === transaction.transactionDate;
-
-                  const canMoveDown =
-                    Boolean(next) &&
-                    next.transactionDate === transaction.transactionDate;
-
-                  return (
-                    <TransactionRow
-                      key={transaction.id}
-                      transaction={transaction}
-                      privacy={privacy}
-                      pending={pending}
-                      dragging={draggingId === transaction.id}
-                      dragOver={dragOverId === transaction.id}
-                      onDelete={() =>
-                        run(() => deleteTransaction(transaction.id))
-                      }
-                      onEdit={() => setEditing(transaction)}
-                      onMoveUp={() => handleMove(transaction.id, "up")}
-                      onMoveDown={() => handleMove(transaction.id, "down")}
-                      onPointerDown={handlePointerDown}
-                      onPointerMove={handlePointerMove}
-                      onPointerUp={handlePointerUp}
-                      onPointerCancel={handlePointerCancel}
-                      canMoveUp={canMoveUp}
-                      canMoveDown={canMoveDown}
-                    />
-                  );
-                })}
+              <div className="space-y-6">
+                {transactionGroups.map((group) => (
+                  <TransactionDateGroup
+                    key={group.date}
+                    date={group.date}
+                    transactions={group.transactions}
+                    privacy={privacy}
+                    pending={pending}
+                    draggingId={draggingId}
+                    dragOverId={dragOverId}
+                    orderedTransactions={orderedTransactions}
+                    onDelete={(transactionId) =>
+                      run(() => deleteTransaction(transactionId))
+                    }
+                    onEdit={(transaction) => setEditing(transaction)}
+                    onMoveUp={(transactionId) =>
+                      handleMove(transactionId, "up")
+                    }
+                    onMoveDown={(transactionId) =>
+                      handleMove(transactionId, "down")
+                    }
+                    onPointerDown={handlePointerDown}
+                    onPointerMove={handlePointerMove}
+                    onPointerUp={handlePointerUp}
+                    onPointerCancel={handlePointerCancel}
+                  />
+                ))}
               </div>
             )}
           </Card>
@@ -751,14 +769,16 @@ function Metric({
   strong?: boolean;
 }) {
   return (
-    <div className="min-w-0 bg-[var(--card)] p-3 sm:p-5">
+    <div className="min-w-0 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4 sm:p-5">
       <p className="truncate text-xs font-medium text-[var(--muted-foreground)]">
         {label}
       </p>
 
       <p
-        className={`mt-1 truncate text-lg ${
-          strong ? "font-semibold sm:text-2xl" : "font-medium sm:text-xl"
+        className={`mt-1 truncate ${
+          strong
+            ? "text-xl font-semibold sm:text-2xl"
+            : "text-lg font-medium sm:text-xl"
         }`}
       >
         {privacy ? maskedMoney(value) : money(value)}
@@ -781,8 +801,8 @@ function StartingRow({
   date: string;
 }) {
   return (
-    <div className="mb-2 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-3 sm:px-4 sm:py-4">
-      <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-2 sm:grid-cols-[32px_120px_130px_minmax(0,1fr)_100px_112px_80px] sm:items-center sm:gap-3">
+    <div className="mb-5 rounded-2xl border border-[var(--border)] bg-[var(--card)] px-3 py-3 sm:px-4 sm:py-4">
+      <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-2 sm:grid-cols-[32px_120px_130px_minmax(0,1fr)_112px_80px] sm:items-center sm:gap-3">
         {/* Empty drag-handle column */}
 
         <div className="hidden sm:block" />
@@ -805,7 +825,7 @@ function StartingRow({
 
         {/* Date */}
 
-        <div className="min-w-0 text-sm text-[var(--muted-foreground)] sm:text-left">
+        <div className="min-w-0 whitespace-nowrap text-sm text-[var(--muted-foreground)] sm:text-left">
           {formatDate(date)}
         </div>
 
@@ -814,6 +834,105 @@ function StartingRow({
         <div className="hidden sm:block" />
       </div>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Transaction Date Group                                                     */
+/* -------------------------------------------------------------------------- */
+
+function TransactionDateGroup({
+  date,
+  transactions,
+  privacy,
+  pending,
+  draggingId,
+  dragOverId,
+  orderedTransactions,
+  onDelete,
+  onEdit,
+  onMoveUp,
+  onMoveDown,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
+}: {
+  date: string;
+  transactions: MonthCalculationResult["transactions"];
+  privacy: boolean;
+  pending: boolean;
+  draggingId: string | null;
+  dragOverId: string | null;
+  orderedTransactions: MonthCalculationResult["transactions"];
+  onDelete: (transactionId: string) => void;
+  onEdit: (transaction: MonthCalculationResult["transactions"][number]) => void;
+  onMoveUp: (transactionId: string) => void;
+  onMoveDown: (transactionId: string) => void;
+  onPointerDown: (
+    event: React.PointerEvent<HTMLButtonElement>,
+    transactionId: string,
+  ) => void;
+  onPointerMove: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onPointerUp: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onPointerCancel: (event: React.PointerEvent<HTMLButtonElement>) => void;
+}) {
+  return (
+    <section>
+      {/* Date Heading */}
+
+      <div className="mb-2 flex items-center gap-3">
+        <div className="h-px flex-1 bg-[var(--border)]" />
+
+        <div className="shrink-0 rounded-full border border-[var(--border)] bg-[var(--card)] px-3 py-1.5 text-xs font-semibold text-[var(--muted-foreground)]">
+          {formatDateLong(date)}
+        </div>
+
+        <div className="h-px flex-1 bg-[var(--border)]" />
+      </div>
+
+      {/* Transactions belonging to this date */}
+
+      <div className="space-y-2">
+        {transactions.map((transaction) => {
+          const currentIndex = orderedTransactions.findIndex(
+            (item) => item.id === transaction.id,
+          );
+
+          const previous = orderedTransactions[currentIndex - 1];
+          const next = orderedTransactions[currentIndex + 1];
+
+          const canMoveUp =
+            Boolean(previous) &&
+            previous.transactionDate === transaction.transactionDate;
+
+          const canMoveDown =
+            Boolean(next) &&
+            next.transactionDate === transaction.transactionDate;
+
+          return (
+            <TransactionRow
+              key={transaction.id}
+              transaction={transaction}
+              privacy={privacy}
+              pending={pending}
+              dragging={draggingId === transaction.id}
+              dragOver={dragOverId === transaction.id}
+              onDelete={() => onDelete(transaction.id)}
+              onEdit={() => onEdit(transaction)}
+              onMoveUp={() => onMoveUp(transaction.id)}
+              onMoveDown={() => onMoveDown(transaction.id)}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerCancel}
+              canMoveUp={canMoveUp}
+              canMoveDown={canMoveDown}
+            />
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -870,7 +989,7 @@ function TransactionRow({
           : "",
       ].join(" ")}
     >
-      <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-3 sm:grid-cols-[32px_120px_130px_minmax(0,1fr)_100px_112px_80px] sm:items-center sm:gap-3">
+      <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-3 sm:grid-cols-[32px_120px_130px_minmax(0,1fr)_80px] sm:items-center sm:gap-3">
         {/* -------------------------------------------------------------- */}
         {/* Drag Handle                                                     */}
         {/* -------------------------------------------------------------- */}
@@ -925,14 +1044,6 @@ function TransactionRow({
 
         <div className="col-span-2 min-w-0 break-words font-medium sm:col-span-1">
           {privacy ? "Private transaction" : transaction.name}
-        </div>
-
-        {/* -------------------------------------------------------------- */}
-        {/* Date                                                             */}
-        {/* -------------------------------------------------------------- */}
-
-        <div className="min-w-0 whitespace-nowrap text-sm text-[var(--muted-foreground)] sm:text-left">
-          {formatDate(transaction.transactionDate)}
         </div>
 
         {/* -------------------------------------------------------------- */}
