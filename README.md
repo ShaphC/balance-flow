@@ -1,4 +1,4 @@
-# Cash Flow
+# Balantiq
 
 Phase 1 foundation for a web-first personal cash-flow tracker using Next.js, TypeScript, Supabase/PostgreSQL, Tailwind CSS, shadcn/ui conventions, and Zod.
 

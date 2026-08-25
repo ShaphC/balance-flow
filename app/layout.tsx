@@ -10,7 +10,7 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Cash Flow",
+  title: "Balantiq",
   description: "A personal cash-flow tracker.",
 };
 

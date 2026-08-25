@@ -475,9 +475,7 @@ export function CashFlowClient({
         <header className="mb-5 flex flex-col gap-4 sm:mb-7 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <p className="text-sm text-[var(--muted-foreground)]">
-                Cash Flow
-              </p>
+              <p className="text-sm text-[var(--muted-foreground)]">Balantiq</p>
 
               {privacy && (
                 <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-1 text-[11px] font-medium">
