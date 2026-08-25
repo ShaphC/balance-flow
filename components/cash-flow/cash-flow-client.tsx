@@ -163,16 +163,23 @@ export function CashFlowClient({
   /* Server Action Runner                                                     */
   /* ------------------------------------------------------------------------ */
 
-  const run = (fn: () => Promise<unknown>) => {
+  const run = (fn: () => Promise<unknown>): Promise<void> => {
     setError(null);
 
-    startTransition(async () => {
-      try {
-        await fn();
-        router.refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Something went wrong.");
-      }
+    return new Promise((resolve, reject) => {
+      startTransition(async () => {
+        try {
+          await fn();
+          router.refresh();
+          resolve();
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : "Something went wrong.";
+
+          setError(message);
+          reject(err);
+        }
+      });
     });
   };
 
@@ -201,7 +208,9 @@ export function CashFlowClient({
       return;
     }
 
-    run(() => reorderTransactions({ transactionIds: ids }));
+    run(() => reorderTransactions({ transactionIds: ids })).catch(() => {
+      // Error is already displayed by run().
+    });
   };
 
   /* ------------------------------------------------------------------------ */
@@ -249,7 +258,9 @@ export function CashFlowClient({
         transactionId,
         direction,
       }),
-    );
+    ).catch(() => {
+      // Error is already displayed by run().
+    });
   };
 
   /* ------------------------------------------------------------------------ */
@@ -536,7 +547,9 @@ export function CashFlowClient({
                   initialDate,
                   initialBalance,
                 }).then(() => setShowSetup(false)),
-              )
+              ).catch(() => {
+                // Error is already displayed by run().
+              })
             }
           />
         ) : calculation && summary ? (
@@ -593,7 +606,11 @@ export function CashFlowClient({
                     className="w-full sm:w-auto"
                     disabled={pending}
                     onClick={() =>
-                      run(() => reconnectStartingBalance(`${month}-01`))
+                      run(() => reconnectStartingBalance(`${month}-01`)).catch(
+                        () => {
+                          // Error is already displayed by run().
+                        },
+                      )
                     }
                   >
                     <Link2 size={15} className="mr-2" />
@@ -688,7 +705,9 @@ export function CashFlowClient({
                     dragOverId={dragOverId}
                     orderedTransactions={orderedTransactions}
                     onDelete={(transactionId) =>
-                      run(() => deleteTransaction(transactionId))
+                      run(() => deleteTransaction(transactionId)).catch(() => {
+                        // Error is already displayed by run().
+                      })
                     }
                     onEdit={(transaction) => setEditing(transaction)}
                     onMoveUp={(transactionId) =>
@@ -718,9 +737,7 @@ export function CashFlowClient({
           month={month}
           pending={pending}
           onClose={() => setShowAdd(false)}
-          onSubmit={(input) =>
-            run(() => createTransaction(input).then(() => setShowAdd(false)))
-          }
+          onSubmit={(input) => run(() => createTransaction(input))}
         />
       )}
 
@@ -735,7 +752,7 @@ export function CashFlowClient({
           pending={pending}
           onClose={() => setEditing(null)}
           onSubmit={(input) =>
-            run(() => updateTransaction(input).then(() => setEditing(null)))
+            run(() => updateTransaction(input)).then(() => setEditing(null))
           }
         />
       )}
@@ -756,8 +773,8 @@ export function CashFlowClient({
               updateStartingBalance({
                 monthStart: `${month}-01`,
                 startingBalance: value,
-              }).then(() => setShowBalanceEditor(false)),
-            )
+              }),
+            ).then(() => setShowBalanceEditor(false))
           }
         />
       )}
@@ -1243,8 +1260,10 @@ function TransactionDialog({
   transaction?: MonthCalculationResult["transactions"][number];
   pending: boolean;
   onClose: () => void;
-  onSubmit: (input: unknown) => void;
+  onSubmit: (input: unknown) => Promise<unknown>;
 }) {
+  const isEditing = Boolean(transaction);
+
   const [name, setName] = useState(transaction?.name ?? "");
 
   const [amount, setAmount] = useState(
@@ -1258,6 +1277,14 @@ function TransactionDialog({
   const [type, setType] = useState<"income" | "expense">(
     transaction && transaction.amount > 0 ? "income" : "expense",
   );
+
+  /*
+   * This controls the success message shown after "Add & another".
+   *
+   * It deliberately lives inside the dialog so the modal does not close
+   * between transactions.
+   */
+  const [addedAnother, setAddedAnother] = useState(false);
 
   const handleAmountChange = (value: string) => {
     if (/^-?\d*\.?\d{0,2}$/.test(value)) {
@@ -1277,6 +1304,65 @@ function TransactionDialog({
     setAmount(formatInputAmount(amount));
   };
 
+  /*
+   * Reset only the fields that should be cleared for the next transaction.
+   *
+   * IMPORTANT:
+   * The date is intentionally preserved so "Add & another" can be used
+   * quickly for multiple transactions on the same date.
+   */
+  const resetForm = () => {
+    setName("");
+    setAmount("");
+    setType("expense");
+    setAddedAnother(true);
+  };
+
+  const buildInput = () => {
+    if (transaction) {
+      return {
+        id: transaction.id,
+        name,
+        amount: parseAmount(amount),
+        transactionDate: date,
+        type,
+        recurrence: "once",
+      };
+    }
+
+    return {
+      name,
+      amount: parseAmount(amount),
+      transactionDate: date,
+      type,
+      recurrence: "once",
+    };
+  };
+
+  const handleSubmit = async (keepOpen: boolean) => {
+    if (pending || !name.trim() || parseAmount(amount) <= 0) {
+      return;
+    }
+
+    setAddedAnother(false);
+
+    try {
+      await onSubmit(buildInput());
+
+      if (keepOpen && !isEditing) {
+        resetForm();
+      } else {
+        onClose();
+      }
+    } catch {
+      /*
+       * The parent run() function already displays the error.
+       *
+       * Keep the dialog open so the user can correct the input.
+       */
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <div className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-[var(--border)] bg-[var(--card)] p-5 shadow-2xl sm:rounded-3xl">
@@ -1287,14 +1373,25 @@ function TransactionDialog({
             </p>
 
             <h2 className="text-xl font-semibold">
-              {transaction ? "Edit transaction" : "Add transaction"}
+              {isEditing ? "Edit transaction" : "Add transaction"}
             </h2>
           </div>
 
-          <Button variant="ghost" className="shrink-0" onClick={onClose}>
+          <Button
+            variant="ghost"
+            className="shrink-0"
+            onClick={onClose}
+            disabled={pending}
+          >
             Close
           </Button>
         </div>
+
+        {addedAnother && !isEditing && (
+          <div className="mt-4 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+            Transaction added. Ready for the next one.
+          </div>
+        )}
 
         <div className="mt-5 space-y-4">
           <label className="block text-sm font-medium">
@@ -1302,7 +1399,11 @@ function TransactionDialog({
             <select
               className="mt-2 h-11 w-full rounded-xl border border-[var(--border)] bg-transparent px-3"
               value={type}
-              onChange={(e) => setType(e.target.value as "income" | "expense")}
+              onChange={(e) => {
+                setType(e.target.value as "income" | "expense");
+                setAddedAnother(false);
+              }}
+              disabled={pending}
             >
               <option value="expense">Expense</option>
               <option value="income">Income</option>
@@ -1314,8 +1415,13 @@ function TransactionDialog({
             <input
               className="mt-2 h-11 w-full rounded-xl border border-[var(--border)] bg-transparent px-3"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                setAddedAnother(false);
+              }}
               placeholder="Rent"
+              disabled={pending}
+              autoFocus
             />
           </label>
 
@@ -1334,9 +1440,13 @@ function TransactionDialog({
                 value={amount}
                 placeholder="0.00"
                 onFocus={handleAmountFocus}
-                onChange={(e) => handleAmountChange(e.target.value)}
+                onChange={(e) => {
+                  handleAmountChange(e.target.value);
+                  setAddedAnother(false);
+                }}
                 onBlur={handleAmountBlur}
                 aria-label="Transaction amount in Canadian dollars"
+                disabled={pending}
               />
 
               <span className="ml-2 text-xs font-medium text-[var(--muted-foreground)]">
@@ -1357,41 +1467,39 @@ function TransactionDialog({
               className="mt-2 h-11 w-full rounded-xl border border-[var(--border)] bg-transparent px-3"
               type="date"
               value={date}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={(e) => {
+                setDate(e.target.value);
+                setAddedAnother(false);
+              }}
+              disabled={pending}
             />
           </label>
         </div>
 
-        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row">
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button variant="ghost" onClick={onClose} disabled={pending}>
+              Cancel
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => handleSubmit(true)}
+              disabled={
+                pending || isEditing || !name.trim() || parseAmount(amount) <= 0
+              }
+            >
+              <Plus size={15} className="mr-2" />
+              Add &amp; another
+            </Button>
+          </div>
 
           <Button
             className="w-full sm:w-auto"
             disabled={pending || !name.trim() || parseAmount(amount) <= 0}
-            onClick={() =>
-              onSubmit(
-                transaction
-                  ? {
-                      id: transaction.id,
-                      name,
-                      amount: parseAmount(amount),
-                      transactionDate: date,
-                      type,
-                      recurrence: "once",
-                    }
-                  : {
-                      name,
-                      amount: parseAmount(amount),
-                      transactionDate: date,
-                      type,
-                      recurrence: "once",
-                    },
-              )
-            }
+            onClick={() => handleSubmit(false)}
           >
-            {transaction ? "Save changes" : "Add transaction"}
+            {isEditing ? "Save changes" : "Add transaction"}
           </Button>
         </div>
       </div>
