@@ -28,6 +28,7 @@ import {
   updateStartingBalance,
   reorderTransactions,
   moveTransaction,
+  toggleTransactionProcessed,
 } from "@/app/(app)/cash-flow/actions";
 
 import type { MonthCalculationResult } from "@/lib/finance/balances";
@@ -180,6 +181,33 @@ export function CashFlowClient({
           reject(err);
         }
       });
+    });
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /* Toggle Transaction Processed                                             */
+  /* ------------------------------------------------------------------------ */
+
+  const handleToggleProcessed = (transactionId: string, processed: boolean) => {
+    if (pending) return;
+
+    const previous = orderedTransactions;
+
+    setOrderedTransactions((current) =>
+      current.map((transaction) =>
+        transaction.id === transactionId
+          ? { ...transaction, processed }
+          : transaction,
+      ),
+    );
+
+    run(() =>
+      toggleTransactionProcessed({
+        transactionId,
+        processed,
+      }),
+    ).catch(() => {
+      setOrderedTransactions(previous);
     });
   };
 
@@ -714,6 +742,7 @@ export function CashFlowClient({
                     onMoveDown={(transactionId) =>
                       handleMove(transactionId, "down")
                     }
+                    onToggleProcessed={handleToggleProcessed}
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
@@ -880,6 +909,7 @@ function TransactionDateGroup({
   onEdit,
   onMoveUp,
   onMoveDown,
+  onToggleProcessed,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -896,6 +926,7 @@ function TransactionDateGroup({
   onEdit: (transaction: MonthCalculationResult["transactions"][number]) => void;
   onMoveUp: (transactionId: string) => void;
   onMoveDown: (transactionId: string) => void;
+  onToggleProcessed: (transactionId: string, processed: boolean) => void;
   onPointerDown: (
     event: React.PointerEvent<HTMLButtonElement>,
     transactionId: string,
@@ -949,6 +980,9 @@ function TransactionDateGroup({
               onEdit={() => onEdit(transaction)}
               onMoveUp={() => onMoveUp(transaction.id)}
               onMoveDown={() => onMoveDown(transaction.id)}
+              onToggleProcessed={(processed) =>
+                onToggleProcessed(transaction.id, processed)
+              }
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -977,6 +1011,7 @@ function TransactionRow({
   onEdit,
   onMoveUp,
   onMoveDown,
+  onToggleProcessed,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -993,6 +1028,7 @@ function TransactionRow({
   onEdit: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  onToggleProcessed: (processed: boolean) => void;
   onPointerDown: (
     event: React.PointerEvent<HTMLButtonElement>,
     transactionId: string,
@@ -1007,16 +1043,17 @@ function TransactionRow({
     <div
       data-transaction-id={transaction.id}
       className={[
-        "relative rounded-2xl border bg-[var(--card)] px-3 py-3 transition-all sm:px-4 sm:py-4",
-        dragging
-          ? "scale-[1.01] opacity-60 shadow-lg"
-          : "border-[var(--border)]",
+        "relative rounded-2xl border px-3 py-3 transition-all sm:px-4 sm:py-4",
+        transaction.processed
+          ? "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/20"
+          : "border-[var(--border)] bg-[var(--card)]",
+        dragging ? "scale-[1.01] opacity-60 shadow-lg" : "",
         dragOver && !dragging
           ? "border-[var(--foreground)] ring-1 ring-[var(--foreground)]/20"
           : "",
       ].join(" ")}
     >
-      <div className="grid grid-cols-[28px_minmax(0,1fr)] gap-x-3 gap-y-3 sm:grid-cols-[32px_120px_130px_minmax(0,1fr)_80px] sm:items-center sm:gap-3">
+      <div className="grid grid-cols-[28px_28px_minmax(0,1fr)] gap-x-3 gap-y-3 sm:grid-cols-[32px_28px_120px_130px_minmax(0,1fr)_auto] sm:items-center sm:gap-3">
         {/* -------------------------------------------------------------- */}
         {/* Drag Handle                                                     */}
         {/* -------------------------------------------------------------- */}
@@ -1035,6 +1072,41 @@ function TransactionRow({
           >
             <GripVertical size={18} />
           </button>
+        </div>
+
+        {/* -------------------------------------------------------------- */}
+        {/* Processed Checkbox                                              */}
+        {/* -------------------------------------------------------------- */}
+
+        <div className="flex items-center justify-start sm:justify-center">
+          <label
+            className={[
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors",
+              transaction.processed
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-[var(--muted-foreground)]",
+              pending ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+            ].join(" ")}
+            title={
+              transaction.processed
+                ? "Mark as unprocessed"
+                : "Mark as processed"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={transaction.processed}
+              disabled={pending}
+              onChange={(event) => onToggleProcessed(event.target.checked)}
+              onClick={(event) => event.stopPropagation()}
+              className="h-4 w-4 cursor-pointer accent-emerald-600 disabled:cursor-not-allowed"
+              aria-label={
+                transaction.processed
+                  ? `Mark ${transaction.name} as unprocessed`
+                  : `Mark ${transaction.name} as processed`
+              }
+            />
+          </label>
         </div>
 
         {/* -------------------------------------------------------------- */}
@@ -1069,15 +1141,15 @@ function TransactionRow({
         {/* Name                                                             */}
         {/* -------------------------------------------------------------- */}
 
-        <div className="col-span-2 min-w-0 break-words font-medium sm:col-span-1">
+        <div className="col-span-3 min-w-0 break-words font-medium sm:col-span-1">
           {privacy ? "Private transaction" : transaction.name}
         </div>
 
         {/* -------------------------------------------------------------- */}
-        {/* Reorder + Edit/Delete                                            */}
+        {/* Actions                                                          */}
         {/* -------------------------------------------------------------- */}
 
-        <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-1 sm:justify-end">
+        <div className="col-span-3 flex flex-wrap items-center justify-end gap-2 sm:col-span-1">
           {/* Up / Down */}
 
           <div className="flex shrink-0 items-center gap-0.5">

@@ -94,15 +94,13 @@ export async function createCashFlowSetup(input: unknown) {
     throw new Error(accountError.message);
   }
 
-  const { error: anchorError } = await supabase
-    .from("balance_anchors")
-    .insert({
-      account_id: account.id,
-      user_id: user.id,
-      initial_date: parsed.initialDate,
-      initial_balance: parsed.initialBalance,
-      status: "connected",
-    });
+  const { error: anchorError } = await supabase.from("balance_anchors").insert({
+    account_id: account.id,
+    user_id: user.id,
+    initial_date: parsed.initialDate,
+    initial_balance: parsed.initialBalance,
+    status: "connected",
+  });
 
   if (anchorError) {
     throw new Error(anchorError.message);
@@ -141,9 +139,7 @@ export async function createTransaction(input: unknown) {
     .limit(1);
 
   const nextSortOrder =
-    sameDay?.[0]?.sort_order != null
-      ? sameDay[0].sort_order + 1000
-      : 1000;
+    sameDay?.[0]?.sort_order != null ? sameDay[0].sort_order + 1000 : 1000;
 
   const signedAmount =
     parsed.type === "expense"
@@ -199,6 +195,39 @@ export async function updateTransaction(input: unknown) {
   revalidatePath("/cash-flow");
 
   return { ok: true };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Toggle Transaction Processed                                               */
+/* -------------------------------------------------------------------------- */
+
+export async function toggleTransactionProcessed(input: unknown) {
+  const parsed = z
+    .object({
+      transactionId: idSchema,
+      processed: z.boolean(),
+    })
+    .parse(input);
+
+  const { supabase, user } = await getUser();
+
+  const { error } = await supabase
+    .from("transactions")
+    .update({
+      processed: parsed.processed,
+    })
+    .eq("id", parsed.transactionId)
+    .eq("user_id", user.id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath("/cash-flow");
+
+  return {
+    ok: true,
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -376,9 +405,7 @@ export async function moveTransaction(input: unknown) {
     return { ok: true };
   }
 
-  const currentIndex = sameDay.findIndex(
-    (item) => item.id === transaction.id,
-  );
+  const currentIndex = sameDay.findIndex((item) => item.id === transaction.id);
 
   if (currentIndex === -1) {
     throw new Error("Transaction position could not be determined.");

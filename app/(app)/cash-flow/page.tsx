@@ -67,7 +67,7 @@ export default async function CashFlowPage({
   const { data: transactionRows } = await supabase
     .from("transactions")
     .select(
-      "id,account_id,user_id,recurring_rule_id,name,amount,transaction_date,sort_order",
+      "id,account_id,user_id,recurring_rule_id,name,amount,transaction_date,sort_order,processed",
     )
     .eq("account_id", account.id)
     .gte("transaction_date", anchor.initialDate)
@@ -90,6 +90,7 @@ export default async function CashFlowPage({
     amount: Number(row.amount),
     transactionDate: row.transaction_date,
     sortOrder: row.sort_order,
+    processed: row.processed,
   }));
 
   const overrides: BalanceOverride[] = (overrideRows ?? []).map((row) => ({

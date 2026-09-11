@@ -1,5 +1,11 @@
 export type TransactionType = "income" | "expense";
-export type RecurrenceFrequency = "once" | "weekly" | "biweekly" | "monthly" | "yearly";
+
+export type RecurrenceFrequency =
+  | "once"
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "yearly";
 
 export interface Transaction {
   id: string;
@@ -10,6 +16,7 @@ export interface Transaction {
   amount: number;
   transactionDate: string;
   sortOrder: number;
+  processed: boolean;
 }
 
 export interface BalanceAnchor {
@@ -42,7 +49,11 @@ export interface CalculatedTransaction extends Transaction {
 export interface MonthCalculation {
   monthStart: string;
   startingBalance: number | null;
-  startingBalanceSource: "initial" | "previous_month" | "override" | "untracked";
+  startingBalanceSource:
+    | "initial"
+    | "previous_month"
+    | "override"
+    | "untracked";
   previousMonthEndingBalance: number | null;
   transactions: CalculatedTransaction[];
   summary: MonthlySummary | null;
